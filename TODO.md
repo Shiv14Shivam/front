@@ -1,0 +1,5 @@
+- [ ] Fix ViewType enum to match switch cases in main.dart
+- [ ] Update main.dart switch statement to use correct ViewType values
+- [ ] Fix navigation in login_page.dart to go to signup instead of landing
+- [ ] Update signup.dart to use onSelectView callback instead of Navigator.pop
+- [ ] Ensure userType is passed correctly in navigation
