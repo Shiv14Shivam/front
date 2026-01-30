@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:front/pages/primary.dart';
 
 import 'view_type.dart';
 import 'pages/landing_page.dart';
@@ -6,6 +7,7 @@ import 'pages/login_page.dart';
 import 'pages/customerHome.dart';
 import 'pages/signup.dart';
 import 'pages/vendorHome.dart';
+import 'pages/requested_order.dart';
 
 void main() {
   runApp(const MyApp());
@@ -19,7 +21,7 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  ViewType currentView = ViewType.landing;
+  ViewType currentView = ViewType.primary;
 
   /// 🔑 GLOBAL ROLE STATE
   String selectedUserType = 'customer';
@@ -61,6 +63,12 @@ class _MyAppState extends State<MyApp> {
         child = VendorHomePage(
           onSelectView: setView,
         ); // replace later with VendorHomePage
+        break;
+      case ViewType.primary:
+        child = PrimaryPage(onSelectView: setView);
+        break;
+      case ViewType.requestedOrders:
+        child = const RequestedOrdersPage();
         break;
     }
 

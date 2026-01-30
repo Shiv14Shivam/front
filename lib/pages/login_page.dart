@@ -31,9 +31,7 @@ class _LoginPageState extends State<LoginPage> {
 
   // ===== ROLE LOGIC =====
   bool get isVendor => widget.userType == 'vendor';
-
   Color get primaryColor => isVendor ? AppColors.vendor : AppColors.primary;
-
   String get roleText => isVendor ? "vendor" : "customer";
 
   @override
@@ -66,11 +64,23 @@ class _LoginPageState extends State<LoginPage> {
     final result = await _apiService.login(
       emailController.text.trim(),
       passwordController.text,
+      role: widget.userType,
     );
 
     setState(() => _isLoading = false);
 
     if (result["success"] == true) {
+      final returnedRole = result["role"]; // MUST come from backend
+
+      // 🔐 ROLE VALIDATION
+      if (returnedRole != widget.userType) {
+        setState(() {
+          _errorMessage =
+              "You are registered as a $returnedRole, not as ${widget.userType}.";
+        });
+        return;
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result["message"] ?? "Login successful"),

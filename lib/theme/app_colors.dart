@@ -11,5 +11,5 @@ class AppColors {
   static const Color titleText = Color(0xFF111827);
   static const Color bodyText = Color(0xFF6B7280);
 
-  static const Color accent = Color(0xFF93C5FD);
+  static const Color accent = Color.fromARGB(255, 189, 220, 255);
 }

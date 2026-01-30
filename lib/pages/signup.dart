@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../view_type.dart';
+import '../services/api_service.dart'; // adjust path if needed
 
 class CreateAccountPage extends StatefulWidget {
   final Function(ViewType, {String? userType}) onSelectView;
@@ -195,8 +196,7 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
     );
   }
 
-  // ===== LOGIC =====
-  void _handleSignup() {
+  void _handleSignup() async {
     if (_formKey.currentState!.validate()) {
       if (passwordController.text != confirmPasswordController.text) {
         ScaffoldMessenger.of(
@@ -205,17 +205,29 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
         return;
       }
 
-      final payload = {
-        "name": nameController.text.trim(),
-        "email": emailController.text.trim(),
-        "phone": phoneController.text.trim(),
-        "password": passwordController.text,
-        "role": widget.userType, // AUTO ROLE
-      };
+      final name = nameController.text.trim();
+      final email = emailController.text.trim();
+      final password = passwordController.text;
+      final role = widget.userType; // customer or vendor
+      final phone = phoneController.text.trim();
 
-      print("SIGNUP PAYLOAD => $payload");
+      final api = ApiService();
 
-      // TODO: API CALL HERE
+      final result = await api.register(name, email, password, role, phone);
+      if (!mounted) return;
+
+      if (result["success"] == true) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result["message"])));
+
+        // After register, go to login screen (NOT auto login)
+        widget.onSelectView(ViewType.login, userType: widget.userType);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result["message"] ?? "Registration failed")),
+        );
+      }
     }
   }
 

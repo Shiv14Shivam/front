@@ -1,1 +1,9 @@
-enum ViewType { landing, login, signup, customerHome, vendorHome }
+enum ViewType {
+  landing,
+  login,
+  signup,
+  customerHome,
+  vendorHome,
+  primary,
+  requestedOrders,
+}

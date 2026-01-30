@@ -32,22 +32,38 @@ Base URL : $_baseUrl
   Map<String, String> get _headers => {
     "Content-Type": "application/json",
     "Accept": "application/json",
-    "Host": "sandbackend.test", // REQUIRED for Herd
+    "Host": "sandbackend.test",
   };
 
-  // ================= LOGIN =================
-  Future<Map<String, dynamic>> login(String email, String password) async {
+  // ================= LOGIN (FIXED) =================
+  Future<Map<String, dynamic>> login(
+    String email,
+    String password, {
+    required String role,
+  }) async {
     try {
       final response = await http
           .post(
             Uri.parse("$_baseUrl/login"),
             headers: _headers,
-            body: jsonEncode({"email": email, "password": password}),
+            body: jsonEncode({
+              "email": email,
+              "password": password,
+              "role": role, // sent to backend
+            }),
           )
           .timeout(const Duration(seconds: 15));
 
+      final data = jsonDecode(response.body);
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
+        final user = data["user"];
+        final returnedRole = user?["role"];
+
+        // 🔐 ROLE CHECK (CRITICAL FIX)
+        if (returnedRole != role) {
+          return {"success": false, "message": "Invalid Credentials"};
+        }
 
         final token =
             data["token"] ??
@@ -58,20 +74,21 @@ Base URL : $_baseUrl
           await _saveToken(token);
         }
 
-        if (data["user"] != null) {
-          await _saveUser(data["user"]);
+        if (user != null) {
+          await _saveUser(user);
         }
 
         return {
           "success": true,
           "message": data["message"] ?? "Login successful",
+          "role": returnedRole,
           "data": data,
         };
       }
 
       return {
         "success": false,
-        "message": jsonDecode(response.body)["message"] ?? "Login failed",
+        "message": data["message"] ?? "Login failed",
         "statusCode": response.statusCode,
       };
     } on TimeoutException {
@@ -106,12 +123,13 @@ Base URL : $_baseUrl
     await prefs.clear();
   }
 
-  // ================= Register =================
+  // ================= REGISTER =================
   Future<Map<String, dynamic>> register(
     String name,
     String email,
     String password,
     String role,
+    String phone,
   ) async {
     try {
       final response = await http
@@ -122,38 +140,27 @@ Base URL : $_baseUrl
               "name": name,
               "email": email,
               "password": password,
+              "password_confirmation": password,
               "role": role,
+              "phone": phone,
             }),
           )
           .timeout(const Duration(seconds: 15));
 
+      final data = jsonDecode(response.body);
+
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-
-        final token =
-            data["token"] ??
-            data["access_token"] ??
-            data["authorisation"]?["token"];
-
-        if (token != null) {
-          await _saveToken(token);
-        }
-
-        if (data["user"] != null) {
-          await _saveUser(data["user"]);
-        }
-
         return {
           "success": true,
-          "message": data["message"] ?? "Registration successful",
-          "data": data,
+          "message":
+              data["message"] ??
+              "Registered successfully. Please verify your email.",
         };
       }
 
       return {
         "success": false,
-        "message":
-            jsonDecode(response.body)["message"] ?? "Registration failed",
+        "message": data["message"] ?? "Registration failed",
         "statusCode": response.statusCode,
       };
     } on TimeoutException {
