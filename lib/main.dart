@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:front/pages/primary.dart';
+import 'package:front/pages/vendor_profile.dart';
 
 import 'view_type.dart';
 import 'pages/landing_page.dart';
@@ -8,6 +9,8 @@ import 'pages/customerHome.dart';
 import 'pages/signup.dart';
 import 'pages/vendorHome.dart';
 import 'pages/requested_order.dart';
+import 'pages/customer_profile.dart';
+import 'pages/address_form.dart';
 
 void main() {
   runApp(const MyApp());
@@ -69,6 +72,19 @@ class _MyAppState extends State<MyApp> {
         break;
       case ViewType.requestedOrders:
         child = const RequestedOrdersPage();
+        break;
+      case ViewType.cutomerProfile:
+        child = CustomerProfilePage(onSelectView: setView);
+        break;
+      case ViewType.vendorProfile:
+        // TODO: Replace with the actual vendor profile page widget
+        child = VendorProfilePage(onSelectView: setView);
+        break;
+      case ViewType.addressForm:
+        child = AddAddressPage(
+          onSelectView: setView,
+          isVendor: selectedUserType == 'vendor',
+        );
         break;
     }
 

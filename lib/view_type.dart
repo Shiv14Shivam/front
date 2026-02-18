@@ -6,4 +6,7 @@ enum ViewType {
   vendorHome,
   primary,
   requestedOrders,
+  cutomerProfile,
+  vendorProfile,
+  addressForm,
 }

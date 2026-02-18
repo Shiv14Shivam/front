@@ -399,7 +399,12 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
               },
             ),
             IconButton(icon: const Icon(Icons.shopping_cart), onPressed: () {}),
-            IconButton(icon: const Icon(Icons.person), onPressed: () {}),
+            IconButton(
+              icon: const Icon(Icons.person),
+              onPressed: () {
+                widget.onSelectView(ViewType.cutomerProfile);
+              },
+            ),
           ],
         ),
       ),

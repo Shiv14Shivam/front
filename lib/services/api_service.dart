@@ -16,6 +16,10 @@ class ApiService {
     printConfig();
   }
 
+  Map<String, String> _authHeaders(String token) {
+    return {..._headers, "Authorization": "Bearer $token"};
+  }
+
   // ================= CONFIG =================
   String get _baseUrl => AppConfig.baseUrl;
 
@@ -118,11 +122,6 @@ Base URL : $_baseUrl
     return (await getToken()) != null;
   }
 
-  Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-  }
-
   // ================= REGISTER =================
   Future<Map<String, dynamic>> register(
     String name,
@@ -163,6 +162,107 @@ Base URL : $_baseUrl
         "message": data["message"] ?? "Registration failed",
         "statusCode": response.statusCode,
       };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= GET PROFILE =================
+  Future<Map<String, dynamic>> getProfile() async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {"success": false, "message": "Not authenticated"};
+      }
+
+      final response = await http
+          .get(Uri.parse("$_baseUrl/profile"), headers: _authHeaders(token))
+          .timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {"success": true, "user": data["user"]};
+      }
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to fetch profile",
+        "statusCode": response.statusCode,
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= UPDATE PROFILE =================
+  Future<Map<String, dynamic>> updateProfile(
+    String name,
+    String email,
+    String phone,
+  ) async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {"success": false, "message": "Not authenticated"};
+      }
+
+      final response = await http
+          .post(
+            Uri.parse("$_baseUrl/update-profile"),
+            headers: _authHeaders(token),
+            body: jsonEncode({"name": name, "email": email, "phone": phone}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {"success": true, "message": data["message"], "data": data};
+      }
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "Profile update failed",
+        "statusCode": response.statusCode,
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= LOGOUT =================
+  Future<Map<String, dynamic>> logout() async {
+    try {
+      final token = await getToken();
+
+      if (token == null) {
+        return {"success": false, "message": "Not authenticated"};
+      }
+
+      final response = await http
+          .post(Uri.parse("$_baseUrl/logout"), headers: _authHeaders(token))
+          .timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+
+        return {
+          "success": true,
+          "message": data["message"] ?? "Logged out successfully",
+        };
+      }
+
+      return {"success": false, "message": data["message"] ?? "Logout failed"};
     } on TimeoutException {
       return {"success": false, "message": "Server timeout"};
     } catch (e) {

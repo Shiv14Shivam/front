@@ -97,10 +97,18 @@ class _VendorHomePageState extends State<VendorHomePage>
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: 0,
         selectedItemColor: Colors.green,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
+        items: [
+          const BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.person),
+            label: "Profile",
+          ),
         ],
+        onTap: (index) {
+          if (index == 1) {
+            widget.onSelectView(ViewType.vendorProfile);
+          }
+        },
       ),
 
       body: FadeTransition(
