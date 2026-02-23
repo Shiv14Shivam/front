@@ -269,4 +269,141 @@ Base URL : $_baseUrl
       return {"success": false, "message": "Network error"};
     }
   }
+
+  Future<Map<String, dynamic>> updateAddress(
+    int id, {
+    required String label,
+    required String line1,
+    String? line2,
+    required String city,
+    required String state,
+    required String pincode,
+    required bool isDefault,
+  }) async {
+    try {
+      final token = await getToken();
+      final response = await http.put(
+        Uri.parse("$_baseUrl/addresses/$id"),
+        headers: _authHeaders(token!),
+        body: jsonEncode({
+          "label": label,
+          "address_line_1": line1,
+          "address_line_2": line2,
+          "city": city,
+          "state": state,
+          "pincode": pincode,
+          "is_default": isDefault,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return {"success": true};
+      }
+
+      return {"success": false};
+    } catch (e) {
+      return {"success": false};
+    }
+  }
+
+  Future<bool> deleteAddress(int id) async {
+    try {
+      final token = await getToken();
+      final response = await http.delete(
+        Uri.parse("$_baseUrl/addresses/$id"),
+        headers: _authHeaders(token!),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> setDefaultAddress(int id) async {
+    try {
+      final token = await getToken();
+      final response = await http.post(
+        Uri.parse("$_baseUrl/addresses/$id/default"),
+        headers: _authHeaders(token!),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ================= GET ADDRESSES =================
+  Future<Map<String, dynamic>> getAddresses() async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {"success": false, "message": "Not authenticated"};
+      }
+
+      final response = await http.get(
+        Uri.parse("$_baseUrl/addresses"),
+        headers: _authHeaders(token),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {"success": true, "data": data};
+      }
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to fetch addresses",
+      };
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= ADD ADDRESS =================
+  Future<Map<String, dynamic>> addAddress({
+    required String label,
+    required String line1,
+    String? line2,
+    required String city,
+    required String state,
+    required String pincode,
+    required bool isDefault,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {"success": false, "message": "Not authenticated"};
+      }
+
+      final response = await http.post(
+        Uri.parse("$_baseUrl/addresses"),
+        headers: _authHeaders(token),
+        body: jsonEncode({
+          "label": label,
+          "address_line_1": line1,
+          "address_line_2": line2,
+          "city": city,
+          "state": state,
+          "pincode": pincode,
+          "is_default": isDefault,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {"success": true, "data": data};
+      }
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to add address",
+      };
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
 }

@@ -4,14 +4,53 @@ import '../widgets/section_card.dart';
 import '../widgets/info_tile.dart';
 import '../widgets/location_card.dart';
 import '../view_type.dart';
+import '../services/api_service.dart';
 
-class VendorProfilePage extends StatelessWidget {
+class VendorProfilePage extends StatefulWidget {
   final Function(ViewType) onSelectView;
 
   const VendorProfilePage({super.key, required this.onSelectView});
 
   @override
+  State<VendorProfilePage> createState() => _VendorProfilePageState();
+}
+
+class _VendorProfilePageState extends State<VendorProfilePage> {
+  final ApiService _apiService = ApiService();
+
+  Map<String, dynamic>? user;
+  List<dynamic> addresses = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVendorData();
+  }
+
+  Future<void> _loadVendorData() async {
+    final profileRes = await _apiService.getProfile();
+    final addressRes = await _apiService.getAddresses();
+
+    if (profileRes["success"]) {
+      user = profileRes["user"];
+    }
+
+    if (addressRes["success"]) {
+      addresses = List.from(addressRes["data"]);
+    }
+
+    setState(() {
+      isLoading = false;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
       body: SingleChildScrollView(
@@ -31,6 +70,8 @@ class VendorProfilePage extends StatelessWidget {
     );
   }
 
+  // ================= HEADER =================
+
   Widget _buildHeader() {
     return Stack(
       clipBehavior: Clip.none,
@@ -46,9 +87,12 @@ class VendorProfilePage extends StatelessWidget {
         Positioned(
           top: 40,
           left: 16,
-          child: CircleAvatar(
-            backgroundColor: Colors.white24,
-            child: const Icon(Icons.arrow_back, color: Colors.white),
+          child: GestureDetector(
+            onTap: () => widget.onSelectView(ViewType.vendorHome),
+            child: CircleAvatar(
+              backgroundColor: Colors.white24,
+              child: const Icon(Icons.arrow_back, color: Colors.white),
+            ),
           ),
         ),
         Positioned(
@@ -83,31 +127,36 @@ class VendorProfilePage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 16),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        "BuildMart Supplier",
-                        style: TextStyle(
+                        user?["name"] ?? "Vendor Name",
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
-                        "Construction Materials Supplier",
-                        style: TextStyle(color: Colors.grey),
+                        user?["business_type"] ??
+                            "Construction Materials Supplier",
+                        style: const TextStyle(color: Colors.grey),
                       ),
-                      SizedBox(height: 6),
+                      const SizedBox(height: 6),
                       Row(
                         children: [
-                          Chip(
+                          const Chip(
                             label: Text("Verified Seller"),
                             backgroundColor: Color(0xFFE8F5E9),
                           ),
-                          SizedBox(width: 8),
-                          Chip(label: Text("Since 2022")),
+                          const SizedBox(width: 8),
+                          Chip(
+                            label: Text(
+                              "Since ${user?["created_at"]?.toString().substring(0, 4) ?? ""}",
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -121,6 +170,8 @@ class VendorProfilePage extends StatelessWidget {
       ],
     );
   }
+
+  // ================= STATS =================
 
   Widget _buildStatsSection() {
     return const Padding(
@@ -136,26 +187,30 @@ class VendorProfilePage extends StatelessWidget {
     );
   }
 
+  // ================= BUSINESS INFO =================
+
   Widget _buildBusinessInfoSection() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: SectionCard(
         title: "Business Information",
         icon: Icons.business,
         children: [
-          InfoTile(title: "Business Name", value: "BuildMart Supplier"),
-          InfoTile(title: "Owner Name", value: "Suresh Patel"),
-          InfoTile(title: "Email", value: "contact@buildmart.com"),
-          InfoTile(title: "Phone", value: "+91 98765 12345"),
-          InfoTile(title: "GST Number", value: "29ABCDE1234F1Z5"),
+          InfoTile(title: "Business Name", value: user?["name"] ?? ""),
+          InfoTile(title: "Owner Name", value: user?["name"] ?? ""),
+          InfoTile(title: "Email", value: user?["email"] ?? ""),
+          InfoTile(title: "Phone", value: user?["phone"] ?? ""),
+          InfoTile(title: "GST Number", value: user?["gst_number"] ?? "N/A"),
           InfoTile(
             title: "Business Type",
-            value: "Construction Materials Supplier",
+            value: user?["business_type"] ?? "Supplier",
           ),
         ],
       ),
     );
   }
+
+  // ================= LOCATIONS =================
 
   Widget _buildBusinessLocationsSection() {
     return Padding(
@@ -164,27 +219,22 @@ class VendorProfilePage extends StatelessWidget {
         title: "Business Locations",
         icon: Icons.location_on,
         showAdd: true,
-
-        // 👇 Navigate using your ViewType system
         onAddTap: () {
-          onSelectView(ViewType.addressForm);
+          widget.onSelectView(ViewType.addressForm);
         },
-
-        children: const [
-          LocationCard(
-            title: "Warehouse & Office",
-            address:
-                "Plot No. 45, Sector 18\nIndustrial Area, Near Highway\nGurgaon, Haryana - 122015",
-            isDefault: true,
-          ),
-          SizedBox(height: 12),
-          LocationCard(
-            title: "Secondary Warehouse",
-            address:
-                "Godown No. 12, MIDC Area\nPhase 3, Logistic Park\nFaridabad, Haryana - 121003",
-            isDefault: false,
-          ),
-        ],
+        children: addresses.isEmpty
+            ? [const Text("No addresses found")]
+            : addresses.map((address) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: LocationCard(
+                    title: address["label"] ?? "Location",
+                    address:
+                        "${address["address_line_1"]}\n${address["city"]}, ${address["state"]} - ${address["pincode"]}",
+                    isDefault: address["is_default"] == true,
+                  ),
+                );
+              }).toList(),
       ),
     );
   }

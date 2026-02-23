@@ -1,287 +1,333 @@
 import 'package:flutter/material.dart';
 import 'package:front/services/api_service.dart';
+import '../theme/app_colors.dart';
 import '../view_type.dart';
 
 class CustomerProfilePage extends StatefulWidget {
   final Function(ViewType) onSelectView;
-
-  const CustomerProfilePage({required this.onSelectView});
+  const CustomerProfilePage({required this.onSelectView, super.key});
 
   @override
   State<CustomerProfilePage> createState() => _CustomerProfilePageState();
 }
 
 class _CustomerProfilePageState extends State<CustomerProfilePage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
-
   final nameController = TextEditingController();
   final emailController = TextEditingController();
   final phoneController = TextEditingController();
 
+  List<dynamic> addresses = [];
   bool isLoading = true;
-  bool isEditing = false;
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
+
+  late AnimationController _gradientController;
+  late AnimationController _shimmerController;
+  late AnimationController _pulseController;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
+    _initializeAnimations();
+    fetchData();
+  }
+
+  void _initializeAnimations() {
+    _gradientController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 800),
-    );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-    fetchUserData();
-    _animationController.forward();
+      duration: const Duration(seconds: 4),
+    )..repeat(reverse: true);
+
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _gradientController.dispose();
+    _shimmerController.dispose();
+    _pulseController.dispose();
     nameController.dispose();
     emailController.dispose();
     phoneController.dispose();
     super.dispose();
   }
 
-  Future<void> fetchUserData() async {
-    final result = await _apiService.getProfile();
+  Future<void> fetchData() async {
+    setState(() => isLoading = true);
 
-    if (result["success"]) {
-      final user = result["user"];
-      nameController.text = user["name"] ?? "";
-      emailController.text = user["email"] ?? "";
-      phoneController.text = user["phone"] ?? "";
+    try {
+      final profile = await _apiService.getProfile();
+      final addressRes = await _apiService.getAddresses();
+
+      if (profile["success"]) {
+        final user = profile["user"];
+        nameController.text = user["name"] ?? "";
+        emailController.text = user["email"] ?? "";
+        phoneController.text = user["phone"] ?? "";
+      }
+
+      if (addressRes["success"]) {
+        addresses = List<dynamic>.from(addressRes["data"] ?? []);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Failed to load data: $e")));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
-
-    setState(() => isLoading = false);
-  }
-
-  Future<void> updateProfile() async {
-    setState(() => isEditing = false);
-    // Add your update profile API call here if needed
-    // The backend logic remains untouched as requested
   }
 
   Future<void> logoutUser() async {
-    final result = await _apiService.logout();
-    if (result["success"]) {
-      widget.onSelectView(ViewType.login);
+    try {
+      final result = await _apiService.logout();
+      if (result["success"]) {
+        widget.onSelectView(ViewType.login);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Logout failed")));
+      }
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (isLoading) {
-      return Scaffold(
-        backgroundColor: const Color(0xFFF8FAFF),
-        body: Center(
-          child: TweenAnimationBuilder(
-            tween: Tween<double>(begin: 0, end: 1),
-            duration: const Duration(milliseconds: 800),
-            builder: (context, double value, child) {
-              return Opacity(
-                opacity: value,
-                child: const CircularProgressIndicator(
-                  strokeWidth: 3,
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4A6CF7)),
-                ),
-              );
-            },
-          ),
-        ),
-      );
-    }
+  void showEditProfileDialog() {
+    final nameEdit = TextEditingController(text: nameController.text);
+    final emailEdit = TextEditingController(text: emailController.text);
+    final phoneEdit = TextEditingController(text: phoneController.text);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFF),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            buildSliverAppBar(),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              sliver: SliverList(
-                delegate: SliverChildListDelegate([
-                  const SizedBox(height: 20),
-                  buildProfileCard(),
-                  const SizedBox(height: 25),
-                  buildPersonalInfo(),
-                  const SizedBox(height: 25),
-                  buildDeliverySection(),
-                  const SizedBox(height: 25),
-                  buildMenuSection(),
-                  const SizedBox(height: 25),
-                  buildSignOut(),
-                  const SizedBox(height: 30),
-                ]),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ================= SLIVER APP BAR =================
-  Widget buildSliverAppBar() {
-    return SliverAppBar(
-      expandedHeight: 130,
-      floating: false,
-      pinned: true,
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      flexibleSpace: FlexibleSpaceBar(
-        background: Container(
-          decoration: const BoxDecoration(
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(20),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF4A6CF7), Color(0xFF7B3FE4), Color(0xFFB23FE4)],
+              colors: [Colors.white, Colors.white.withOpacity(0.92)],
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.2),
+                blurRadius: 40,
+                offset: const Offset(0, 20),
+              ),
+            ],
           ),
-          child: Stack(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Positioned(
-                top: -50,
-                right: -30,
-                child: Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.1),
+              // Handle
+              Container(
+                margin: const EdgeInsets.only(top: 16),
+                width: 60,
+                height: 4,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(2),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
                   ),
                 ),
               ),
-              Positioned(
-                bottom: -40,
-                left: -20,
-                child: Container(
-                  width: 120,
-                  height: 120,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.1),
-                  ),
+              // Content
+              Padding(
+                padding: const EdgeInsets.all(28),
+                child: Column(
+                  children: [
+                    Text(
+                      "Edit Profile",
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.grey[900],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    _buildPremiumTextField(nameEdit, "Full Name", Icons.person),
+                    const SizedBox(height: 16),
+                    _buildPremiumTextField(emailEdit, "Email", Icons.email),
+                    const SizedBox(height: 16),
+                    _buildPremiumTextField(phoneEdit, "Mobile", Icons.phone),
+                    const SizedBox(height: 28),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildPremiumButton(
+                            "Cancel",
+                            () => Navigator.pop(context),
+                            isSecondary: true,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          key: ValueKey(_pulseController.hashCode),
+                          child: _buildPremiumButton("Save Changes", () async {
+                            Navigator.pop(context);
+
+                            final result = await _apiService.updateProfile(
+                              nameEdit.text.trim(),
+                              emailEdit.text.trim(),
+                              phoneEdit.text.trim(),
+                            );
+
+                            if (result["success"] && mounted) {
+                              setState(() {
+                                nameController.text = nameEdit.text.trim();
+                                emailController.text = emailEdit.text.trim();
+                                phoneController.text = phoneEdit.text.trim();
+                              });
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    "Profile updated successfully!",
+                                  ),
+                                  backgroundColor: AppColors.success,
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: StadiumBorder(),
+                                ),
+                              );
+                            } else if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    result["message"] ?? "Update failed",
+                                  ),
+                                  backgroundColor: AppColors.error,
+                                  behavior: SnackBarBehavior.floating,
+                                  shape: StadiumBorder(),
+                                ),
+                              );
+                            }
+                          }),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
       ),
-      leading: Padding(
-        padding: const EdgeInsets.only(left: 16, top: 8),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(12),
+    ).then((_) {
+      nameEdit.dispose();
+      emailEdit.dispose();
+      phoneEdit.dispose();
+    });
+  }
+
+  Widget _buildPremiumTextField(
+    TextEditingController controller,
+    String label,
+    IconData icon,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 6),
           ),
-          child: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => widget.onSelectView(ViewType.customerHome),
-            splashRadius: 20,
+        ],
+      ),
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, color: const Color(0xFF6366F1), size: 22),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 18,
+            horizontal: 20,
+          ),
+          labelStyle: TextStyle(
+            fontSize: 14,
+            color: Colors.grey[600],
+            fontWeight: FontWeight.w500,
           ),
         ),
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
       ),
     );
   }
 
-  // ================= PROFILE CARD =================
-  Widget buildProfileCard() {
-    return Transform.translate(
-      offset: const Offset(0, -40),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Colors.white, Color(0xFFF5F7FF)],
-          ),
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF4A6CF7).withOpacity(0.15),
-              blurRadius: 30,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: isLoading
+          ? _buildLoadingScreen()
+          : Column(
               children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF4A6CF7), Color(0xFF7B3FE4)],
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF4A6CF7).withOpacity(0.3),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: CircleAvatar(
-                    radius: 40,
-                    backgroundColor: Colors.transparent,
-                    child: Text(
-                      nameController.text.isNotEmpty
-                          ? nameController.text[0].toUpperCase()
-                          : "U",
-                      style: const TextStyle(
-                        fontSize: 32,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 20),
+                _buildPremiumHeader(),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        nameController.text,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 22,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        emailController.text,
-                        style: TextStyle(
-                          color: Colors.grey.shade600,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 20,
+                    ),
+                    child: Column(
+                      children: [
+                        _buildPremiumProfileCard(),
+                        const SizedBox(height: 28),
+                        _buildPremiumAddressSection(),
+                        const SizedBox(height: 28),
+                        _buildPremiumMenuCard(),
+                        const SizedBox(height: 36),
+                        _buildPremiumLogoutButton(),
+                        const SizedBox(height: 50),
+                      ],
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-            const Divider(height: 1, thickness: 1),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                buildStat("12", "Orders", Icons.shopping_bag_outlined),
-                buildStat("5", "Wishlist", Icons.favorite_border),
-                buildStat("2", "In Transit", Icons.local_shipping_outlined),
-              ],
+    );
+  }
+
+  Widget _buildLoadingScreen() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF667eea), Color(0xFF764ba2), Color(0xFFF093FB)],
+        ),
+      ),
+      child: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+            SizedBox(height: 20),
+            Text(
+              "Loading Profile...",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -289,36 +335,120 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     );
   }
 
-  Widget buildStat(String number, String label, IconData icon) {
-    return TweenAnimationBuilder(
-      tween: Tween<double>(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 600),
-      builder: (context, double value, child) {
-        return Transform.scale(
-          scale: value,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFF),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                Icon(icon, size: 20, color: const Color(0xFF4A6CF7)),
-                const SizedBox(height: 4),
-                Text(
-                  number,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                ),
+  Widget _buildPremiumHeader() {
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        _gradientController,
+        _shimmerController,
+        _pulseController,
+      ]),
+      builder: (context, child) {
+        return Container(
+          height: 200,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Color.lerp(
+                  AppColors.primary,
+                  AppColors.primaryDark,
+                  _gradientController.value,
+                )!,
+                Color.lerp(
+                  AppColors.primaryDark,
+                  AppColors.primaryLight,
+                  _gradientController.value * 0.7,
+                )!,
+                Color.lerp(
+                  AppColors.primaryLight,
+                  const Color(0xFF60A5FA),
+                  _gradientController.value * 0.3,
+                )!,
               ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 40,
+                offset: const Offset(0, 15),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  AnimatedBuilder(
+                    animation: _pulseController,
+                    builder: (context, child) {
+                      return Transform.scale(
+                        scale: 1.0 + (_pulseController.value * 0.08),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.25),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                            ),
+                          ),
+                          child: IconButton(
+                            icon: const Icon(
+                              Icons.arrow_back_ios_new,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                            onPressed: () =>
+                                widget.onSelectView(ViewType.customerHome),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const Spacer(),
+                  AnimatedBuilder(
+                    animation: _shimmerController,
+                    builder: (context, child) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.white.withOpacity(0.4),
+                              Colors.white.withOpacity(0.1),
+                              Colors.white.withOpacity(0.4),
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                          borderRadius: BorderRadius.circular(25),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.white.withOpacity(0.2),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: const Text(
+                          "My Profile",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -326,192 +456,355 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     );
   }
 
-  // ================= PERSONAL INFO =================
-  Widget buildPersonalInfo() {
-    return buildCardContainer(
-      title: "Personal Information",
-      action: IconButton(
-        onPressed: () {
-          setState(() => isEditing = !isEditing);
-        },
-        icon: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          padding: const EdgeInsets.all(8),
+  Widget _buildPremiumProfileCard() {
+    return AnimatedBuilder(
+      animation: _gradientController,
+      builder: (context, child) {
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
-            color: isEditing ? const Color(0xFF4A6CF7) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isEditing ? Colors.transparent : const Color(0xFF4A6CF7),
+            gradient: LinearGradient(
+              colors: [
+                Colors.white,
+                Colors.white.withOpacity(0.88),
+                Colors.white.withOpacity(0.75),
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
             ),
-          ),
-          child: Icon(
-            isEditing ? Icons.check : Icons.edit,
-            color: isEditing ? Colors.white : const Color(0xFF4A6CF7),
-            size: 20,
-          ),
-        ),
-      ),
-      children: [
-        buildInfoField(
-          icon: Icons.person_outline,
-          label: "Full Name",
-          controller: nameController,
-          enabled: isEditing,
-        ),
-        const SizedBox(height: 16),
-        buildInfoField(
-          icon: Icons.email_outlined,
-          label: "Email Address",
-          controller: emailController,
-          enabled: isEditing,
-        ),
-        const SizedBox(height: 16),
-        buildInfoField(
-          icon: Icons.phone_outlined,
-          label: "Phone Number",
-          controller: phoneController,
-          enabled: isEditing,
-        ),
-        if (isEditing) ...[
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () {
-                    setState(() => isEditing = false);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.grey.shade200,
-                    foregroundColor: Colors.grey.shade700,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: const Text("Cancel"),
-                ),
+            borderRadius: BorderRadius.circular(32),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 35,
+                offset: const Offset(0, 20),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: updateProfile,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A6CF7),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: const Text("Save Changes"),
-                ),
+              BoxShadow(
+                color: Colors.blue.withOpacity(0.08),
+                blurRadius: 60,
+                offset: const Offset(0, 12),
               ),
             ],
           ),
-        ],
-      ],
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  _buildPremiumAvatar(),
+                  const Spacer(),
+                  _buildEditButton(),
+                ],
+              ),
+              const SizedBox(height: 32),
+              _buildDetailRow(
+                "👤 Full Name",
+                nameController.text,
+                Icons.person,
+              ),
+              const SizedBox(height: 20),
+              _buildDetailRow(
+                "✉️ Email Address",
+                emailController.text,
+                Icons.email,
+              ),
+              const SizedBox(height: 20),
+              _buildDetailRow(
+                "📱 Mobile Number",
+                phoneController.text,
+                Icons.phone,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget buildInfoField({
-    required IconData icon,
-    required String label,
-    required TextEditingController controller,
-    required bool enabled,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: enabled ? Colors.white : const Color(0xFFF8FAFF),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: enabled
-              ? const Color(0xFF4A6CF7).withOpacity(0.3)
-              : Colors.transparent,
-        ),
-      ),
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF4A6CF7).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: const Color(0xFF4A6CF7), size: 20),
-        ),
-        title: Text(
-          label,
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-        ),
-        subtitle: enabled
-            ? TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
+  Widget _buildPremiumAvatar() {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: 1.0 + (_pulseController.value * 0.06),
+          child: Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: RadialGradient(
+                colors: const [
+                  Color(0xFF6366F1),
+                  Color(0xFF8B5CF6),
+                  Color(0xFF06B6D4),
+                  Color(0xFF10B981),
+                ],
+                stops: const [0.0, 0.3, 0.7, 1.0],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF6366F1).withOpacity(0.5),
+                  blurRadius: 30,
+                  offset: const Offset(0, 15),
                 ),
-                style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 16,
+                BoxShadow(
+                  color: const Color(0xFF8B5CF6).withOpacity(0.3),
+                  blurRadius: 50,
+                  offset: const Offset(0, 10),
                 ),
-              )
-            : Text(
-                controller.text,
+              ],
+              border: Border.all(color: Colors.white, width: 4),
+            ),
+            child: Center(
+              child: Text(
+                nameController.text.isNotEmpty
+                    ? nameController.text[0].toUpperCase()
+                    : "U",
                 style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 16,
+                  fontSize: 38,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black45,
+                      offset: Offset(0, 3),
+                      blurRadius: 6,
+                    ),
+                  ],
                 ),
               ),
-      ),
+            ),
+          ),
+        );
+      },
     );
   }
 
-  // ================= DELIVERY SECTION =================
-  Widget buildDeliverySection() {
-    return buildCardContainer(
-      title: "Delivery Addresses",
-      action: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF4A6CF7).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(30),
-        ),
-        child: TextButton.icon(
-          onPressed: () {
-            widget.onSelectView(ViewType.addressForm);
-          },
-          icon: const Icon(Icons.add, size: 18),
-          label: const Text("Add New"),
-          style: TextButton.styleFrom(foregroundColor: const Color(0xFF4A6CF7)),
-        ),
-      ),
+  Widget _buildEditButton() {
+    return AnimatedBuilder(
+      animation: _shimmerController,
+      builder: (context, child) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.white.withOpacity(0.95),
+                Colors.white.withOpacity(0.85),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: TextButton.icon(
+            onPressed: showEditProfileDialog,
+            icon: const Icon(Icons.edit, size: 20, color: Color(0xFF6366F1)),
+            label: const Text(
+              "Edit Profile",
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF6366F1),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, IconData icon) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        buildAddressTile(
-          "Home",
-          "Flat 301, Green Valley Apartments\nSector 12, Near Metro Station\nNew Delhi - 110001",
-          true,
+        Row(
+          children: [
+            Icon(icon, size: 20, color: const Color(0xFF6366F1)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
-        buildAddressTile(
-          "Office",
-          "Plot 45, Industrial Area Phase 2\nGurgaon - 122015",
-          false,
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.7),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.grey.shade100, width: 1),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 15,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Text(
+            value.isEmpty ? "Not provided" : value,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[900],
+            ),
+          ),
         ),
       ],
     );
   }
 
-  Widget buildAddressTile(String title, String address, bool isDefault) {
-    return Container(
-      padding: const EdgeInsets.all(16),
+  Widget _buildPremiumAddressSection() {
+    return _buildPremiumCard(
+      title: "📍 Delivery Addresses",
+      action: _buildAddAddressButton(),
+      children: addresses.isEmpty
+          ? [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(48),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: Colors.grey.shade200, width: 1.5),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.location_on_outlined,
+                      size: 72,
+                      color: Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      "No addresses added yet",
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Add your first delivery address",
+                      style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+                    ),
+                  ],
+                ),
+              ),
+            ]
+          : addresses
+                .map((address) => _buildPremiumAddressTile(address))
+                .toList(),
+    );
+  }
+
+  Widget _buildAddAddressButton() {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: 1.0 + (_pulseController.value * 0.03),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(24),
+              onTap: () async {
+                widget.onSelectView(ViewType.addressForm);
+                await Future.delayed(const Duration(milliseconds: 500));
+                fetchData();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6366F1).withOpacity(0.4),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.add, color: Colors.white, size: 18),
+                    SizedBox(width: 6),
+                    Text(
+                      "Add New",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPremiumAddressTile(dynamic address) {
+    final isDefault = address["is_default"] == true;
+    final lines = [
+      address["address_line_1"] ?? "",
+      address["address_line_2"] ?? "",
+      "${address["city"] ?? ""}, ${address["state"] ?? ""}",
+      address["pincode"] ?? "",
+    ].where((line) => line.isNotEmpty).join(", ");
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFF),
-        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          colors: isDefault
+              ? [
+                  const Color(0xFF6366F1).withOpacity(0.12),
+                  Colors.white,
+                  Colors.white.withOpacity(0.92),
+                ]
+              : [Colors.white, Colors.white, Colors.white.withOpacity(0.88)],
+        ),
+        borderRadius: BorderRadius.circular(24),
         border: isDefault
-            ? Border.all(color: const Color(0xFF4A6CF7), width: 1.5)
-            : null,
+            ? Border.all(color: const Color(0xFF6366F1), width: 2.5)
+            : Border.all(color: Colors.grey.shade200, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: isDefault
+                ? const Color(0xFF6366F1).withOpacity(0.25)
+                : Colors.black.withOpacity(0.08),
+            blurRadius: 25,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -519,87 +812,86 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4A6CF7).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  color: isDefault
+                      ? const Color(0xFF6366F1)
+                      : Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(
-                  title == "Home" ? Icons.home : Icons.business_center,
-                  size: 16,
-                  color: const Color(0xFF4A6CF7),
+                  isDefault ? Icons.star : Icons.location_on,
+                  color: isDefault ? Colors.white : Colors.grey[700],
+                  size: 18,
                 ),
               ),
-              const SizedBox(width: 10),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  address["label"] ?? "Home",
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[900],
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
               if (isDefault)
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
+                    horizontal: 12,
+                    vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF4A6CF7), Color(0xFF7B3FE4)],
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF4A6CF7).withOpacity(0.3),
-                        blurRadius: 8,
-                      ),
-                    ],
+                    color: const Color(0xFF6366F1),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Text(
-                    "Default",
+                    "DEFAULT",
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 11,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            address,
-            style: TextStyle(color: Colors.grey.shade700, height: 1.4),
-          ),
           const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.only(left: 10),
+            child: Text(
+              lines,
+              style: TextStyle(
+                fontSize: 15,
+                color: Colors.grey[700],
+                height: 1.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               if (!isDefault)
-                TextButton(
-                  onPressed: () {},
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF4A6CF7),
-                    backgroundColor: const Color(0xFF4A6CF7).withOpacity(0.1),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text("Set as Default"),
+                _buildActionButton(
+                  "Set Default",
+                  Icons.star_border_outlined,
+                  const Color(0xFFF59E0B),
+                  () async {
+                    await _apiService.setDefaultAddress(address["id"]);
+                    fetchData();
+                  },
                 ),
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: () {},
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.red,
-                  backgroundColor: Colors.red.withOpacity(0.1),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: const Text("Remove"),
+              const SizedBox(width: 12),
+              _buildActionButton(
+                "Remove",
+                Icons.delete_outline,
+                Colors.red,
+                () async {
+                  await _apiService.deleteAddress(address["id"]);
+                  fetchData();
+                },
               ),
             ],
           ),
@@ -608,135 +900,277 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     );
   }
 
-  // ================= MENU =================
-  Widget buildMenuSection() {
-    return buildCardContainer(
-      children: [
-        buildMenuTile(
-          Icons.receipt_long_outlined,
-          "Order History",
-          Colors.blue,
+  Widget _buildActionButton(
+    String text,
+    IconData icon,
+    Color color,
+    VoidCallback onPressed,
+  ) {
+    return TextButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18, color: color),
+      label: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
         ),
-        buildMenuTile(Icons.card_giftcard, "Rewards & Benefits", Colors.orange),
-        buildMenuTile(Icons.support_agent, "Help & Support", Colors.green),
+      ),
+    );
+  }
+
+  Widget _buildPremiumMenuCard() {
+    return _buildPremiumCard(
+      title: "⚡ Quick Actions",
+      children: [
+        _buildPremiumMenuTile(Icons.receipt_long_outlined, "Order History"),
+        _buildPremiumMenuTile(
+          Icons.card_giftcard_outlined,
+          "Rewards & Benefits",
+        ),
+        _buildPremiumMenuTile(Icons.support_agent_outlined, "Help & Support"),
+        _buildPremiumMenuTile(Icons.settings_outlined, "Account Settings"),
       ],
     );
   }
 
-  Widget buildMenuTile(IconData icon, String title, Color color) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: ListTile(
-        leading: Container(
-          padding: const EdgeInsets.all(10),
+  Widget _buildPremiumMenuTile(IconData icon, String title) {
+    return AnimatedBuilder(
+      animation: _shimmerController,
+      builder: (context, child) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(icon, color: color, size: 22),
-        ),
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 16),
-        ),
-        trailing: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade100,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(
-            Icons.arrow_forward_ios,
-            size: 14,
-            color: Colors.grey,
-          ),
-        ),
-        onTap: () {},
-      ),
-    );
-  }
-
-  // ================= SIGN OUT =================
-  Widget buildSignOut() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      child: ElevatedButton(
-        onPressed: logoutUser,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.red,
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(vertical: 18),
-          shape: RoundedRectangleBorder(
+            color: Colors.grey.shade50,
             borderRadius: BorderRadius.circular(20),
-            side: const BorderSide(color: Colors.red, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 15,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.logout, size: 20),
-            const SizedBox(width: 10),
-            const Text(
-              "Sign Out",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: () {
+                // Handle menu item tap
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("$title tapped!"),
+                    duration: const Duration(milliseconds: 800),
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF6366F1).withOpacity(0.4),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: Icon(icon, color: Colors.white, size: 22),
+                    ),
+                    const SizedBox(width: 20),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[900],
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.arrow_forward_ios,
+                      size: 18,
+                      color: Colors.grey[500],
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
-  // ================= CARD WRAPPER =================
-  Widget buildCardContainer({
-    String? title,
+  Widget _buildPremiumLogoutButton() {
+    return AnimatedBuilder(
+      animation: _gradientController,
+      builder: (context, child) {
+        return Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            gradient: LinearGradient(
+              colors: [Colors.white, Colors.white.withOpacity(0.9)],
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.red.withOpacity(0.25),
+                blurRadius: 30,
+                offset: const Offset(0, 15),
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(28),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(28),
+              onTap: logoutUser,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 18,
+                  horizontal: 40,
+                ),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: Colors.red.shade400, width: 2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.logout, color: Colors.red.shade600, size: 22),
+                    const SizedBox(width: 12),
+                    Text(
+                      "Sign Out",
+                      style: TextStyle(
+                        color: Colors.red.shade600,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPremiumButton(
+    String text,
+    VoidCallback onPressed, {
+    bool isSecondary = false,
+  }) {
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: 1.0 + (_pulseController.value * 0.02),
+          child: Container(
+            height: 56,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              gradient: LinearGradient(
+                colors: isSecondary
+                    ? [Colors.grey.shade300, Colors.grey.shade200]
+                    : const [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: (isSecondary ? Colors.grey : const Color(0xFF6366F1))
+                      .withOpacity(isSecondary ? 0.3 : 0.4),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(20),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: onPressed,
+                child: Center(
+                  child: Text(
+                    text,
+                    style: TextStyle(
+                      color: isSecondary ? Colors.grey[800] : Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPremiumCard({
+    required String title,
     Widget? action,
     required List<Widget> children,
   }) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      width: double.infinity,
+      padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(30),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white,
+            Colors.white.withOpacity(0.94),
+            Colors.white.withOpacity(0.85),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(32),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 40,
+            offset: const Offset(0, 20),
+          ),
+          BoxShadow(
+            color: Colors.blue.withOpacity(0.06),
+            blurRadius: 70,
+            offset: const Offset(0, 15),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (title != null) ...[
+          if (title.isNotEmpty)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   title,
                   style: const TextStyle(
+                    fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                    letterSpacing: -0.5,
+                    color: Color(0xFF1F2937),
                   ),
                 ),
                 if (action != null) action,
               ],
             ),
-            const SizedBox(height: 20),
-          ],
+          if (title.isNotEmpty) const SizedBox(height: 24),
           ...children,
         ],
       ),

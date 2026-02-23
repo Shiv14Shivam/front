@@ -16,6 +16,10 @@ class CustomerHomePage extends StatefulWidget {
 
 class _CustomerHomePageState extends State<CustomerHomePage> {
   final TextEditingController searchController = TextEditingController();
+  final TextEditingController quantityController = TextEditingController();
+  final TextEditingController distanceController = TextEditingController();
+
+  double totalCost = 0;
 
   Product? selectedProduct;
   bool isSearchFocused = false;
@@ -270,24 +274,42 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
   // ================= PRODUCT DETAIL MODAL =================
   Widget _productDetailModal() {
     final p = selectedProduct!;
+
     return Positioned.fill(
       child: Container(
         color: Colors.black54,
-        child: Center(
-          child: Container(
-            margin: const EdgeInsets.all(20),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Stack(
-              children: [
-                SingleChildScrollView(
+        child: SafeArea(
+          child: Center(
+            child: Container(
+              margin: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    top: 16,
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 100,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(height: 30),
+                      // Close Button
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () =>
+                              setState(() => selectedProduct = null),
+                        ),
+                      ),
+
+                      // Title
                       Text(
                         p.name,
                         style: const TextStyle(
@@ -295,54 +317,150 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+
                       const SizedBox(height: 12),
+
+                      // Image
                       Container(
                         height: 180,
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Center(
-                          child: Text(
-                            p.image,
-                            style: const TextStyle(fontSize: 72),
-                          ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          p.image,
+                          style: const TextStyle(fontSize: 72),
                         ),
                       ),
+
                       const SizedBox(height: 12),
+
+                      // Category
                       Chip(label: Text(p.category)),
+
+                      const SizedBox(height: 10),
+
+                      // Dealer Card
                       Card(
                         color: Colors.green.shade50,
                         child: ListTile(
+                          leading: const Icon(Icons.store),
                           title: Text(p.dealer),
                           subtitle: Text(p.dealerLocation),
-                          leading: const Icon(Icons.store),
                         ),
                       ),
-                      const SizedBox(height: 8),
+
+                      const SizedBox(height: 10),
+
+                      // Overview
                       const Text(
                         "Overview",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(p.description),
-                      const SizedBox(height: 8),
+
+                      const SizedBox(height: 10),
+
+                      // Detailed Description
                       const Text(
                         "Detailed Description",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(p.detailedDescription),
+
                       const SizedBox(height: 12),
+
+                      // Price
                       Text(
-                        "₹${p.price}  (${p.unit})",
+                        "₹${p.price} (${p.unit})",
                         style: const TextStyle(
                           fontSize: 20,
                           color: AppColors.primary,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+
                       const SizedBox(height: 8),
+
                       Text("Delivery: ₹${p.deliveryPricePerKm}/km"),
+
                       const SizedBox(height: 16),
+
+                      // Quantity
+                      TextField(
+                        controller: quantityController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: "Enter Quantity",
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Distance
+                      TextField(
+                        controller: distanceController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: "Enter Delivery Distance (km)",
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Total Cost
+                      if (totalCost > 0)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            "Total Cost: ₹${totalCost.toStringAsFixed(2)}",
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+
+                      const SizedBox(height: 16),
+
+                      // View Total Button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 45,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey.shade700,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () {
+                            final quantity =
+                                double.tryParse(quantityController.text) ?? 0;
+                            final distance =
+                                double.tryParse(distanceController.text) ?? 0;
+
+                            setState(() {
+                              totalCost =
+                                  (quantity * p.price) +
+                                  (distance * p.deliveryPricePerKm);
+                            });
+                          },
+                          child: const Text("View Total Cost"),
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Add to Cart
                       SizedBox(
                         width: double.infinity,
                         height: 45,
@@ -354,24 +472,33 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
                             ),
                           ),
                           onPressed: () {},
-                          child: const Text(
-                            "Add to Cart",
-                            style: TextStyle(color: Colors.white),
-                          ),
+                          child: const Text("Add to Cart"),
                         ),
                       ),
+
+                      const SizedBox(height: 10),
+
+                      // Request Order
+                      SizedBox(
+                        width: double.infinity,
+                        height: 45,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onPressed: () {},
+                          child: const Text("Request Order"),
+                        ),
+                      ),
+
+                      const SizedBox(height: 30),
                     ],
                   ),
                 ),
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => setState(() => selectedProduct = null),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

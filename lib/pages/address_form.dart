@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:front/view_type.dart';
+import 'package:front/services/api_service.dart';
+import '../theme/app_colors.dart';
 
 class AddAddressPage extends StatefulWidget {
   final Function(ViewType) onSelectView;
@@ -17,6 +19,7 @@ class AddAddressPage extends StatefulWidget {
 
 class _AddAddressPageState extends State<AddAddressPage> {
   final _formKey = GlobalKey<FormState>();
+  final ApiService _apiService = ApiService();
 
   final labelController = TextEditingController();
   final line1Controller = TextEditingController();
@@ -26,6 +29,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
   final pincodeController = TextEditingController();
 
   bool isDefault = false;
+  bool isLoading = false;
 
   late List<String> quickLabels;
 
@@ -62,10 +66,42 @@ class _AddAddressPageState extends State<AddAddressPage> {
     super.dispose();
   }
 
+  Future<void> saveAddress() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() => isLoading = true);
+
+    final result = await _apiService.addAddress(
+      label: labelController.text.trim(),
+      line1: line1Controller.text.trim(),
+      line2: line2Controller.text.trim(),
+      city: cityController.text.trim(),
+      state: stateController.text.trim(),
+      pincode: pincodeController.text.trim(),
+      isDefault: isDefault,
+    );
+
+    setState(() => isLoading = false);
+
+    if (result["success"]) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Address added successfully")),
+      );
+
+      widget.onSelectView(
+        widget.isVendor ? ViewType.vendorProfile : ViewType.cutomerProfile,
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result["message"] ?? "Failed to add address")),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6FA),
+      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -83,14 +119,15 @@ class _AddAddressPageState extends State<AddAddressPage> {
   }
 
   // ================= HEADER =================
+
   Widget buildHeader() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: widget.isVendor
-              ? [Colors.green, Colors.green.shade700]
-              : [Colors.blue, Colors.purple],
+              ? [AppColors.success, AppColors.success.withOpacity(0.7)]
+              : [AppColors.primary, AppColors.primaryDark],
         ),
         borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
       ),
@@ -135,6 +172,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
   }
 
   // ================= FORM =================
+
   Widget buildForm() {
     return Form(
       key: _formKey,
@@ -169,7 +207,6 @@ class _AddAddressPageState extends State<AddAddressPage> {
     );
   }
 
-  // ================= LABEL + QUICK SELECT =================
   Widget buildLabelField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -190,7 +227,6 @@ class _AddAddressPageState extends State<AddAddressPage> {
     );
   }
 
-  // ================= TEXT FIELD =================
   Widget buildTextField(
     String label,
     TextEditingController controller, {
@@ -211,7 +247,6 @@ class _AddAddressPageState extends State<AddAddressPage> {
     );
   }
 
-  // ================= DEFAULT CHECKBOX =================
   Widget buildDefaultCheckbox() {
     return Row(
       children: [
@@ -228,26 +263,34 @@ class _AddAddressPageState extends State<AddAddressPage> {
     );
   }
 
-  // ================= BUTTONS =================
   Widget buildButtons() {
     return Row(
       children: [
         Expanded(
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: widget.isVendor ? Colors.green : Colors.blue,
+              backgroundColor: widget.isVendor
+                  ? AppColors.success
+                  : AppColors.primary,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
             ),
-            onPressed: () {
-              if (_formKey.currentState!.validate()) {
-                // TODO: Call API here
-                Navigator.pop(context);
-              }
-            },
-            child: const Text("Save Address"),
+            onPressed: isLoading ? null : saveAddress,
+            child: isLoading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text(
+                    "Save Address",
+                    style: TextStyle(color: Colors.white),
+                  ),
           ),
         ),
         const SizedBox(width: 12),
@@ -260,7 +303,6 @@ class _AddAddressPageState extends State<AddAddressPage> {
                     : ViewType.cutomerProfile,
               );
             },
-
             child: const Text("Cancel"),
           ),
         ),
