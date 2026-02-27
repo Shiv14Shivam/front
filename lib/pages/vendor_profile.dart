@@ -19,13 +19,38 @@ class _VendorProfilePageState extends State<VendorProfilePage> {
   final ApiService _apiService = ApiService();
 
   Map<String, dynamic>? user;
+  Map<String, dynamic>? vendor;
   List<dynamic> addresses = [];
   bool isLoading = true;
+  bool isEditing = false;
+
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController phoneController = TextEditingController();
+  final TextEditingController firmController = TextEditingController();
+  final TextEditingController businessTypeController = TextEditingController();
+  final TextEditingController gstController = TextEditingController();
+  final TextEditingController emailController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadVendorData();
+  }
+
+  // ================= SAFE YEAR FORMATTER =================
+  // This safely extracts year from created_at
+  // It will NEVER crash even if created_at is null or invalid
+  String _getYear() {
+    try {
+      final createdAt = user?["created_at"];
+
+      if (createdAt == null) return "";
+
+      final date = DateTime.parse(createdAt.toString());
+      return date.year.toString();
+    } catch (e) {
+      return ""; // if parsing fails, return empty instead of crashing
+    }
   }
 
   Future<void> _loadVendorData() async {
@@ -34,6 +59,14 @@ class _VendorProfilePageState extends State<VendorProfilePage> {
 
     if (profileRes["success"]) {
       user = profileRes["user"];
+      vendor = user?["vendor"];
+
+      nameController.text = user?["name"] ?? "";
+      emailController.text = user?["email"] ?? "";
+      phoneController.text = user?["phone"] ?? "";
+      firmController.text = vendor?["firm_name"] ?? "";
+      businessTypeController.text = vendor?["business_type"] ?? "";
+      gstController.text = vendor?["gst_number"] ?? "";
     }
 
     if (addressRes["success"]) {
@@ -43,6 +76,28 @@ class _VendorProfilePageState extends State<VendorProfilePage> {
     setState(() {
       isLoading = false;
     });
+  }
+
+  Future<void> _saveProfile() async {
+    final res = await _apiService.updateProfile(
+      nameController.text,
+      emailController.text,
+      phoneController.text,
+      firmName: firmController.text,
+      businessType: businessTypeController.text,
+      gstNumber: gstController.text,
+    );
+
+    if (res["success"]) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Profile Updated")));
+      await _loadVendorData();
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(res["message"])));
+    }
   }
 
   @override
@@ -89,9 +144,9 @@ class _VendorProfilePageState extends State<VendorProfilePage> {
           left: 16,
           child: GestureDetector(
             onTap: () => widget.onSelectView(ViewType.vendorHome),
-            child: CircleAvatar(
+            child: const CircleAvatar(
               backgroundColor: Colors.white24,
-              child: const Icon(Icons.arrow_back, color: Colors.white),
+              child: Icon(Icons.arrow_back, color: Colors.white),
             ),
           ),
         ),
@@ -132,7 +187,7 @@ class _VendorProfilePageState extends State<VendorProfilePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        user?["name"] ?? "Vendor Name",
+                        vendor?["firm_name"] ?? user?["name"] ?? "",
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -140,29 +195,29 @@ class _VendorProfilePageState extends State<VendorProfilePage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        user?["business_type"] ??
+                        vendor?["business_type"] ??
                             "Construction Materials Supplier",
                         style: const TextStyle(color: Colors.grey),
                       ),
                       const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Chip(
-                            label: Text("Verified Seller"),
-                            backgroundColor: Color(0xFFE8F5E9),
-                          ),
-                          const SizedBox(width: 8),
-                          Chip(
-                            label: Text(
-                              "Since ${user?["created_at"]?.toString().substring(0, 4) ?? ""}",
-                            ),
-                          ),
-                        ],
-                      ),
+                      Row(children: [Chip(label: Text("Since ${_getYear()}"))]),
                     ],
                   ),
                 ),
-                const Icon(Icons.edit, color: Colors.green),
+                GestureDetector(
+                  onTap: () async {
+                    if (isEditing) {
+                      await _saveProfile();
+                    }
+                    setState(() {
+                      isEditing = !isEditing;
+                    });
+                  },
+                  child: Icon(
+                    isEditing ? Icons.check : Icons.edit,
+                    color: Colors.green,
+                  ),
+                ),
               ],
             ),
           ),
@@ -196,16 +251,47 @@ class _VendorProfilePageState extends State<VendorProfilePage> {
         title: "Business Information",
         icon: Icons.business,
         children: [
-          InfoTile(title: "Business Name", value: user?["name"] ?? ""),
-          InfoTile(title: "Owner Name", value: user?["name"] ?? ""),
-          InfoTile(title: "Email", value: user?["email"] ?? ""),
-          InfoTile(title: "Phone", value: user?["phone"] ?? ""),
-          InfoTile(title: "GST Number", value: user?["gst_number"] ?? "N/A"),
-          InfoTile(
-            title: "Business Type",
-            value: user?["business_type"] ?? "Supplier",
-          ),
+          isEditing
+              ? _editableField("Business Name", firmController)
+              : InfoTile(
+                  title: "Business Name",
+                  value: vendor?["firm_name"] ?? "",
+                ),
+          isEditing
+              ? _editableField("Owner Name", nameController)
+              : InfoTile(title: "Owner Name", value: user?["name"] ?? ""),
+          isEditing
+              ? _editableField("Email", emailController)
+              : InfoTile(title: "Email", value: user?["email"] ?? ""),
+          isEditing
+              ? _editableField("Phone", phoneController)
+              : InfoTile(title: "Phone", value: user?["phone"] ?? ""),
+          isEditing
+              ? _editableField("GST Number", gstController)
+              : InfoTile(
+                  title: "GST Number",
+                  value: vendor?["gst_number"] ?? "N/A",
+                ),
+          isEditing
+              ? _editableField("Business Type", businessTypeController)
+              : InfoTile(
+                  title: "Business Type",
+                  value: vendor?["business_type"] ?? "Supplier",
+                ),
         ],
+      ),
+    );
+  }
+
+  Widget _editableField(String label, TextEditingController controller) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: label,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
       ),
     );
   }

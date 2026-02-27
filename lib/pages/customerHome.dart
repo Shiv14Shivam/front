@@ -1,61 +1,89 @@
 import 'package:flutter/material.dart';
-import 'package:front/pages/demo_product.dart';
-import 'package:front/view_type.dart';
-import '../widgets/productModel.dart';
+import '../services/api_service.dart';
 import '../theme/app_colors.dart';
+import '../view_type.dart';
 
 class CustomerHomePage extends StatefulWidget {
   final Function(ViewType) onSelectView;
 
-  const CustomerHomePage({Key? key, required this.onSelectView})
-    : super(key: key);
+  const CustomerHomePage({super.key, required this.onSelectView});
 
   @override
   State<CustomerHomePage> createState() => _CustomerHomePageState();
 }
 
 class _CustomerHomePageState extends State<CustomerHomePage> {
-  final TextEditingController searchController = TextEditingController();
-  final TextEditingController quantityController = TextEditingController();
+  final ApiService api = ApiService();
+
+  List<dynamic> products = [];
+  List<dynamic> filteredProducts = [];
+  dynamic selectedProduct;
+
   final TextEditingController distanceController = TextEditingController();
+  final TextEditingController quantityController = TextEditingController();
+  final TextEditingController searchController = TextEditingController();
 
   double totalCost = 0;
+  bool isLoading = true;
 
-  Product? selectedProduct;
-  bool isSearchFocused = false;
-  String searchQuery = "";
-
-  final List<String> categories = [
-    "Cement",
-    "Sand",
-    "Steel",
-    "Bricks",
-    "Gravel",
-    "Paint",
-  ];
-
-  final List<Product> products = demoProducts;
-
-  List<Product> get filteredProducts {
-    return products.where((p) {
-      return p.name.toLowerCase().contains(searchQuery.toLowerCase()) ||
-          p.category.toLowerCase().contains(searchQuery.toLowerCase());
-    }).toList();
+  @override
+  void initState() {
+    super.initState();
+    loadMarketplace();
   }
 
-  bool get showContent => !isSearchFocused || searchQuery.isNotEmpty;
-  bool get showEmptyState => isSearchFocused && searchQuery.isEmpty;
-  bool get showCategorySlider => showContent && searchQuery.isEmpty;
+  Future<void> loadMarketplace() async {
+    try {
+      final data = await api.getMarketplaceListings();
+      setState(() {
+        products = data;
+        filteredProducts = data;
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() => isLoading = false);
+    }
+  }
 
-  // 🔹 RESET HOME STATE
-  void resetHome() {
-    searchController.clear();
-    FocusScope.of(context).unfocus();
+  // 🔥 NEW: Fetch full product details while keeping listing prices
+  Future<void> loadProductDetails(dynamic listing) async {
+    try {
+      final fullProduct = await api.getProducts(listing["product"]["id"]);
+      final enhancedListing = {
+        ...listing, // Keep ALL marketplace pricing data
+        "product": {
+          ...listing["product"], // Keep basic info
+          ...fullProduct, // Add specifications
+        },
+      };
+      setState(() => selectedProduct = enhancedListing);
+    } catch (e) {
+      // Fallback to original listing if API fails
+      setState(() => selectedProduct = listing);
+    }
+  }
+
+  void filterProducts(String query) {
     setState(() {
-      searchQuery = "";
-      isSearchFocused = false;
-      selectedProduct = null;
+      if (query.isEmpty) {
+        filteredProducts = products;
+      } else {
+        filteredProducts = products.where((p) {
+          final name = (p["product"]["name"] ?? "").toLowerCase();
+          final desc = (p["product"]["short_description"] ?? "").toLowerCase();
+          return name.contains(query.toLowerCase()) ||
+              desc.contains(query.toLowerCase());
+        }).toList();
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    distanceController.dispose();
+    quantityController.dispose();
+    super.dispose();
   }
 
   @override
@@ -64,204 +92,135 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
-          Column(
-            children: [
-              _header(),
-              if (showEmptyState) _emptyState(),
-              if (showCategorySlider) _categorySlider(),
-              if (showContent) _productGrid(),
-            ],
-          ),
+          isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  children: [
+                    // Search Bar - Amazon style
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(16, 50, 16, 16),
+                      child: TextField(
+                        controller: searchController,
+                        onChanged: filterProducts,
+                        decoration: InputDecoration(
+                          hintText: "Search products...",
+                          prefixIcon: const Icon(
+                            Icons.search,
+                            color: Colors.grey,
+                          ),
+                          suffixIcon: searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(
+                                    Icons.clear,
+                                    color: Colors.grey,
+                                  ),
+                                  onPressed: () {
+                                    searchController.clear();
+                                    filterProducts("");
+                                  },
+                                )
+                              : null,
+                          filled: true,
+                          fillColor: AppColors.surface,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(25),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: GridView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+                        itemCount: filteredProducts.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              childAspectRatio: 0.72,
+                              crossAxisSpacing: 14,
+                              mainAxisSpacing: 14,
+                            ),
+                        itemBuilder: (context, index) {
+                          final p = filteredProducts[index];
+                          return _productCard(p);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+
           if (selectedProduct != null) _productDetailModal(),
+
           _bottomNav(),
         ],
       ),
     );
   }
 
-  // ================= HEADER =================
-  Widget _header() {
-    return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            "Sand Here",
-            style: TextStyle(
-              fontSize: 24,
-              color: AppColors.primary,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Focus(
-            onFocusChange: (f) => setState(() => isSearchFocused = f),
-            child: TextField(
-              controller: searchController,
-              onChanged: (v) {
-                setState(() {
-                  searchQuery = v;
-                  if (v.isEmpty) {
-                    isSearchFocused = false;
-                  }
-                });
-              },
-              decoration: InputDecoration(
-                hintText: "Search for products...",
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: AppColors.surface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ================= EMPTY STATE =================
-  Widget _emptyState() {
-    return Expanded(
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.search, size: 80, color: AppColors.bodyText),
-            SizedBox(height: 12),
-            Text(
-              "Start typing to search",
-              style: TextStyle(fontSize: 18, color: AppColors.bodyText),
-            ),
-            SizedBox(height: 6),
-            Text(
-              "Search for construction materials",
-              style: TextStyle(color: AppColors.bodyText),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ================= CATEGORY SLIDER =================
-  Widget _categorySlider() {
-    return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: SizedBox(
-        height: 90,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          itemCount: categories.length,
-          itemBuilder: (context, i) {
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text("🏗️", style: TextStyle(fontSize: 26)),
-                  const SizedBox(height: 4),
-                  Text(categories[i], style: const TextStyle(fontSize: 12)),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  // ================= PRODUCT GRID =================
-  Widget _productGrid() {
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 80),
-        child: GridView.builder(
-          physics: const BouncingScrollPhysics(),
-          cacheExtent: 600,
-          itemCount: filteredProducts.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.65,
-          ),
-          itemBuilder: (context, i) {
-            final p = filteredProducts[i];
-            return _productCard(p);
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _productCard(Product p) {
+  // ================= PRODUCT CARD =================
+  Widget _productCard(dynamic p) {
     return GestureDetector(
-      onTap: () => setState(() => selectedProduct = p),
+      onTap: () => loadProductDetails(p), // 🔥 Now fetches specs + keeps prices
       child: Container(
         decoration: BoxDecoration(
           color: AppColors.surface,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(22),
           boxShadow: const [
             BoxShadow(
-              blurRadius: 8,
+              blurRadius: 10,
               color: Colors.black12,
-              offset: Offset(0, 4),
+              offset: Offset(0, 6),
             ),
           ],
         ),
         child: Column(
           children: [
-            Container(
-              height: 160,
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(18),
+            Expanded(
+              child: Container(
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE8EEF7),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
                 ),
-              ),
-              child: Center(
-                child: Text(p.image, style: const TextStyle(fontSize: 48)),
+                child: const Text("🏗️", style: TextStyle(fontSize: 48)),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    p.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    p["product"]["name"],
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
                   ),
+                  const SizedBox(height: 4),
                   Text(
-                    p.description,
+                    p["product"]["short_description"] ?? "",
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.bodyText),
+                    style: const TextStyle(fontSize: 12),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    "₹${p.price}",
+                    "₹${p["price_per_bag"]}",
                     style: const TextStyle(
                       fontSize: 16,
                       color: AppColors.primary,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Text(p.unit, style: const TextStyle(fontSize: 11)),
+                  Text(
+                    p["product"]["unit"] ?? "",
+                    style: const TextStyle(fontSize: 11),
+                  ),
                 ],
               ),
             ),
@@ -273,7 +232,9 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
 
   // ================= PRODUCT DETAIL MODAL =================
   Widget _productDetailModal() {
-    final p = selectedProduct!;
+    final p = selectedProduct;
+    final product = p["product"];
+    final seller = p["seller"];
 
     return Positioned.fill(
       child: Container(
@@ -281,25 +242,18 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
         child: SafeArea(
           child: Center(
             child: Container(
-              margin: const EdgeInsets.all(20),
+              margin: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: AppColors.surface,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(22),
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(22),
                 child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  padding: EdgeInsets.only(
-                    left: 16,
-                    right: 16,
-                    top: 16,
-                    bottom: MediaQuery.of(context).viewInsets.bottom + 100,
-                  ),
+                  padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Close Button
                       Align(
                         alignment: Alignment.topRight,
                         child: IconButton(
@@ -309,192 +263,172 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
                         ),
                       ),
 
-                      // Title
-                      Text(
-                        p.name,
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Image
+                      // IMAGE
                       Container(
-                        height: 180,
+                        height: 200,
                         alignment: Alignment.center,
-                        child: Text(
-                          p.image,
-                          style: const TextStyle(fontSize: 72),
+                        child: const Text(
+                          "🏗️",
+                          style: TextStyle(fontSize: 80),
                         ),
                       ),
-
-                      const SizedBox(height: 12),
-
-                      // Category
-                      Chip(label: Text(p.category)),
 
                       const SizedBox(height: 10),
 
-                      // Dealer Card
+                      Chip(label: Text(p["category"]["name"])),
+
+                      const SizedBox(height: 12),
+
+                      // SELLER CARD
                       Card(
                         color: Colors.green.shade50,
                         child: ListTile(
                           leading: const Icon(Icons.store),
-                          title: Text(p.dealer),
-                          subtitle: Text(p.dealerLocation),
+                          title: Text(seller["name"]),
+                          subtitle: Text(seller["phone"] ?? ""),
                         ),
                       ),
 
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
 
-                      // Overview
                       const Text(
                         "Overview",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      Text(p.description),
+                      Text(product["short_description"] ?? ""),
 
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
 
-                      // Detailed Description
                       const Text(
                         "Detailed Description",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      Text(p.detailedDescription),
+                      Text(product["detailed_description"] ?? ""),
 
                       const SizedBox(height: 12),
 
-                      // Price
-                      Text(
-                        "₹${p.price} (${p.unit})",
-                        style: const TextStyle(
-                          fontSize: 20,
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      // 🔥 FIXED SPECIFICATIONS - Same as AddProductPage
+                      const Text(
+                        "Specifications",
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
-
-                      const SizedBox(height: 8),
-
-                      Text("Delivery: ₹${p.deliveryPricePerKm}/km"),
+                      const SizedBox(height: 6),
+                      ...(product["specifications"] ?? [])
+                          .map<Widget>(
+                            (spec) => Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(
+                                    Icons.check,
+                                    size: 16,
+                                    color: Colors.green,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      spec["value"] ?? "",
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        height: 1.4,
+                                        color: Color(0xFF444444),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                          .toList(),
 
                       const SizedBox(height: 16),
 
-                      // Quantity
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "₹${p["price_per_bag"]} (${product["unit"]})",
+                              style: const TextStyle(
+                                fontSize: 20,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              "Delivery: ₹${p["delivery_charge_per_ton"]} per km",
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 14),
+
                       TextField(
                         controller: quantityController,
                         keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           labelText: "Enter Quantity",
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                          border: OutlineInputBorder(),
                         ),
                       ),
 
                       const SizedBox(height: 12),
 
-                      // Distance
                       TextField(
                         controller: distanceController,
                         keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: "Enter Delivery Distance (km)",
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                        decoration: const InputDecoration(
+                          labelText: "Enter distance in km",
+                          border: OutlineInputBorder(),
                         ),
                       ),
 
                       const SizedBox(height: 16),
 
-                      // Total Cost
                       if (totalCost > 0)
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            "Total Cost: ₹${totalCost.toStringAsFixed(2)}",
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.primary,
-                            ),
+                        Text(
+                          "Total Cost: ₹${totalCost.toStringAsFixed(2)}",
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
 
                       const SizedBox(height: 16),
 
-                      // View Total Button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 45,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey.shade700,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: () {
-                            final quantity =
-                                double.tryParse(quantityController.text) ?? 0;
-                            final distance =
-                                double.tryParse(distanceController.text) ?? 0;
+                      ElevatedButton(
+                        onPressed: () {
+                          final qty =
+                              double.tryParse(quantityController.text) ?? 0;
+                          final dist =
+                              double.tryParse(distanceController.text) ?? 0;
 
-                            setState(() {
-                              totalCost =
-                                  (quantity * p.price) +
-                                  (distance * p.deliveryPricePerKm);
-                            });
-                          },
-                          child: const Text("View Total Cost"),
-                        ),
+                          setState(() {
+                            totalCost =
+                                (qty * double.parse(p["price_per_bag"])) +
+                                (dist *
+                                    double.parse(p["delivery_charge_per_ton"]));
+                          });
+                        },
+                        child: const Text("View Total Cost"),
                       ),
 
                       const SizedBox(height: 10),
 
-                      // Add to Cart
-                      SizedBox(
-                        width: double.infinity,
-                        height: 45,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: () {},
-                          child: const Text("Add to Cart"),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
                         ),
+                        onPressed: () {},
+                        child: const Text("Request Order"),
                       ),
-
-                      const SizedBox(height: 10),
-
-                      // Request Order
-                      SizedBox(
-                        width: double.infinity,
-                        height: 45,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          onPressed: () {},
-                          child: const Text("Request Order"),
-                        ),
-                      ),
-
-                      const SizedBox(height: 30),
                     ],
                   ),
                 ),
@@ -518,19 +452,11 @@ class _CustomerHomePageState extends State<CustomerHomePage> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            IconButton(
-              icon: const Icon(Icons.home, color: AppColors.primary),
-              onPressed: () {
-                resetHome();
-                widget.onSelectView(ViewType.customerHome);
-              },
-            ),
-            IconButton(icon: const Icon(Icons.shopping_cart), onPressed: () {}),
+            const Icon(Icons.home, color: AppColors.primary),
+            const Icon(Icons.shopping_cart),
             IconButton(
               icon: const Icon(Icons.person),
-              onPressed: () {
-                widget.onSelectView(ViewType.cutomerProfile);
-              },
+              onPressed: () => widget.onSelectView(ViewType.cutomerProfile),
             ),
           ],
         ),

@@ -128,21 +128,34 @@ Base URL : $_baseUrl
     String email,
     String password,
     String role,
-    String phone,
-  ) async {
+    String phone, {
+    String? firmName,
+    String? businessType,
+    String? gstNumber,
+    String? gst,
+  }) async {
     try {
+      final Map<String, dynamic> body = {
+        "name": name,
+        "email": email,
+        "password": password,
+        "password_confirmation": password,
+        "role": role,
+        "phone": phone,
+      };
+
+      // Add vendor fields only if role is vendor
+      if (role == "vendor") {
+        body["firm_name"] = firmName;
+        body["business_type"] = businessType;
+        body["gst_number"] = gstNumber;
+      }
+
       final response = await http
           .post(
             Uri.parse("$_baseUrl/register"),
             headers: _headers,
-            body: jsonEncode({
-              "name": name,
-              "email": email,
-              "password": password,
-              "password_confirmation": password,
-              "role": role,
-              "phone": phone,
-            }),
+            body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 15));
 
@@ -184,16 +197,14 @@ Base URL : $_baseUrl
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        return {"success": true, "user": data["user"]};
+        // Handle both wrapped and direct responses
+        return {"success": true, "user": data["user"] ?? data};
       }
 
       return {
         "success": false,
         "message": data["message"] ?? "Failed to fetch profile",
-        "statusCode": response.statusCode,
       };
-    } on TimeoutException {
-      return {"success": false, "message": "Server timeout"};
     } catch (e) {
       return {"success": false, "message": "Network error"};
     }
@@ -203,26 +214,44 @@ Base URL : $_baseUrl
   Future<Map<String, dynamic>> updateProfile(
     String name,
     String email,
-    String phone,
-  ) async {
+    String phone, {
+    String? firmName,
+    String? businessType,
+    String? gstNumber,
+  }) async {
     try {
       final token = await getToken();
       if (token == null) {
         return {"success": false, "message": "Not authenticated"};
       }
 
+      final Map<String, dynamic> body = {
+        "name": name,
+        "email": email,
+        "phone": phone,
+      };
+
+      // Add vendor fields only if provided
+      if (firmName != null) body["firm_name"] = firmName;
+      if (businessType != null) body["business_type"] = businessType;
+      if (gstNumber != null) body["gst_number"] = gstNumber;
+
       final response = await http
           .post(
             Uri.parse("$_baseUrl/update-profile"),
             headers: _authHeaders(token),
-            body: jsonEncode({"name": name, "email": email, "phone": phone}),
+            body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 15));
 
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        return {"success": true, "message": data["message"], "data": data};
+        return {
+          "success": true,
+          "message": data["message"],
+          "user": data["user"],
+        };
       }
 
       return {
@@ -405,5 +434,108 @@ Base URL : $_baseUrl
     } catch (e) {
       return {"success": false, "message": "Network error"};
     }
+  }
+
+  // ================= GET CATEGORIES =================
+  Future<List<dynamic>> getCategories() async {
+    final response = await http.get(
+      Uri.parse("$_baseUrl/categories"),
+      headers: _headers,
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data["data"]; // because you used Resource::collection
+    }
+
+    throw Exception("Failed to load categories");
+  }
+
+  // ================= GET BRANDS =================
+  Future<List<dynamic>> getBrands(int categoryId) async {
+    final token = await getToken();
+
+    final response = await http.get(
+      Uri.parse("$_baseUrl/categories/$categoryId/brands"),
+      headers: _authHeaders(token!), // ✅ send token
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data["data"];
+    }
+
+    print("Brand error: ${response.statusCode} ${response.body}");
+    throw Exception("Failed to load brands");
+  }
+
+  // ================= GET PRODUCTS =================
+  Future<List<dynamic>> getProducts(int brandId) async {
+    final token = await getToken();
+
+    final response = await http.get(
+      Uri.parse("$_baseUrl/brands/$brandId/products"),
+      headers: _authHeaders(token!), // ✅ send token
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data["data"];
+    }
+
+    print("Product error: ${response.statusCode} ${response.body}");
+    throw Exception("Failed to load products");
+  }
+
+  // ================= CREATE LISTING =================
+  Future<Map<String, dynamic>> createListing({
+    required int categoryId,
+    required int brandId,
+    required int productId,
+    required double pricePerBag,
+    required double deliveryChargePerTon,
+    required int stock,
+  }) async {
+    final token = await getToken();
+
+    final response = await http.post(
+      Uri.parse("$_baseUrl/seller/listings"),
+      headers: _authHeaders(token!),
+      body: jsonEncode({
+        "category_id": categoryId,
+        "brand_id": brandId,
+        "product_id": productId,
+        "price_per_bag": pricePerBag,
+        "delivery_charge_per_ton": deliveryChargePerTon,
+        "available_stock_bags": stock,
+      }),
+    );
+
+    final data = jsonDecode(response.body);
+
+    if (response.statusCode == 201) {
+      return {"success": true, "data": data};
+    }
+
+    return {
+      "success": false,
+      "message": data["message"] ?? "Failed to create listing",
+    };
+  }
+
+  // ================= GET MARKETPLACE LISTINGS =================
+  Future<List<dynamic>> getMarketplaceListings() async {
+    final response = await http.get(
+      Uri.parse("$_baseUrl/marketplace"),
+      headers: _headers,
+    );
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+
+      return decoded["data"]; // ✅ CORRECT
+    }
+
+    throw Exception("Failed to load marketplace listings");
   }
 }

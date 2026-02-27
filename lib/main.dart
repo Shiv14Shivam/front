@@ -11,6 +11,7 @@ import 'pages/vendorHome.dart';
 import 'pages/requested_order.dart';
 import 'pages/customer_profile.dart';
 import 'pages/address_form.dart';
+import 'pages/ListNewProductPage.dart';
 
 void main() {
   runApp(const MyApp());
@@ -85,6 +86,9 @@ class _MyAppState extends State<MyApp> {
           onSelectView: setView,
           isVendor: selectedUserType == 'vendor',
         );
+        break;
+      case ViewType.listNewProduct:
+        child = AddProductPage(onSelectView: setView);
         break;
     }
 

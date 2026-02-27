@@ -1,27 +1,30 @@
-class Product {
+class ProductModel {
   final int id;
   final String name;
-  final String category;
-  final double price;
-  final String unit;
-  final String image;
-  final String description;
+  final String shortDescription;
   final String detailedDescription;
-  final double deliveryPricePerKm;
-  final String dealer;
-  final String dealerLocation;
+  final String unit;
+  final List<String> specifications;
 
-  Product({
+  ProductModel({
     required this.id,
     required this.name,
-    required this.category,
-    required this.price,
-    required this.unit,
-    required this.image,
-    required this.description,
+    required this.shortDescription,
     required this.detailedDescription,
-    required this.deliveryPricePerKm,
-    required this.dealer,
-    required this.dealerLocation,
+    required this.unit,
+    required this.specifications,
   });
+
+  factory ProductModel.fromJson(Map<String, dynamic> json) {
+    return ProductModel(
+      id: json['id'],
+      name: json['name'],
+      shortDescription: json['short_description'] ?? '',
+      detailedDescription: json['detailed_description'] ?? '',
+      unit: json['unit'] ?? '',
+      specifications: (json['specifications'] ?? [])
+          .map<String>((spec) => spec['value'].toString())
+          .toList(),
+    );
+  }
 }

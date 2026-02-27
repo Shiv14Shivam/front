@@ -28,6 +28,9 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
   final phoneController = TextEditingController();
   final passwordController = TextEditingController();
   final confirmPasswordController = TextEditingController();
+  final firmNameController = TextEditingController();
+  final businessTypeController = TextEditingController();
+  final gstController = TextEditingController();
 
   // ===== ROLE LOGIC =====
   bool get isVendor => widget.userType == 'vendor';
@@ -104,6 +107,30 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
                   icon: Icons.phone_outlined,
                   keyboard: TextInputType.phone,
                 ),
+
+                // ===== VENDOR EXTRA FIELDS =====
+                if (isVendor) ...[
+                  _label("Firm Name"),
+                  _inputField(
+                    controller: firmNameController,
+                    hint: "ABC Traders Pvt Ltd",
+                    icon: Icons.business,
+                  ),
+
+                  _label("Business Type"),
+                  _inputField(
+                    controller: businessTypeController,
+                    hint: "Cement Supplier / Sand Dealer",
+                    icon: Icons.category_outlined,
+                  ),
+
+                  _label("GST Number"),
+                  _inputField(
+                    controller: gstController,
+                    hint: "22AAAAA0000A1Z5",
+                    icon: Icons.receipt_long_outlined,
+                  ),
+                ],
 
                 _label("Password"),
                 _passwordField(
@@ -205,15 +232,33 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
         return;
       }
 
-      final name = nameController.text.trim();
-      final email = emailController.text.trim();
-      final password = passwordController.text;
-      final role = widget.userType; // customer or vendor
-      final phone = phoneController.text.trim();
+      // ===== EXTRA VALIDATION FOR VENDOR =====
+      if (isVendor) {
+        if (firmNameController.text.isEmpty ||
+            businessTypeController.text.isEmpty ||
+            gstController.text.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Please fill all vendor details")),
+          );
+          return;
+        }
+      }
 
       final api = ApiService();
 
-      final result = await api.register(name, email, password, role, phone);
+      final result = await api.register(
+        nameController.text.trim(),
+        emailController.text.trim(),
+        passwordController.text,
+        widget.userType,
+        phoneController.text.trim(),
+
+        // Pass extra vendor data
+        firmName: isVendor ? firmNameController.text.trim() : null,
+        businessType: isVendor ? businessTypeController.text.trim() : null,
+        gstNumber: isVendor ? gstController.text.trim() : null,
+      );
+
       if (!mounted) return;
 
       if (result["success"] == true) {
@@ -221,7 +266,6 @@ class _CreateAccountPageState extends State<CreateAccountPage> {
           context,
         ).showSnackBar(SnackBar(content: Text(result["message"])));
 
-        // After register, go to login screen (NOT auto login)
         widget.onSelectView(ViewType.login, userType: widget.userType);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -239,7 +239,9 @@ class _VendorHomePageState extends State<VendorHomePage>
                   title: "Add Your Product",
                   subtitle: "Add new product to your store",
                   color: Colors.lightGreen,
-                  onTap: () {},
+                  onTap: () {
+                    widget.onSelectView(ViewType.listNewProduct);
+                  },
                 ),
 
                 const SizedBox(height: 20),

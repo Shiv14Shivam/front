@@ -118,11 +118,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(24),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Colors.white, Colors.white.withOpacity(0.92)],
-            ),
+            color: AppColors.surface,
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.2),
@@ -141,9 +137,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                 height: 4,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2),
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                  ),
+                  color: AppColors.primary,
                 ),
               ),
               // Content
@@ -156,7 +150,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
-                        color: Colors.grey[900],
+                        color: Colors.black87,
                       ),
                     ),
                     const SizedBox(height: 28),
@@ -198,7 +192,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                                   content: Text(
                                     "Profile updated successfully!",
                                   ),
-                                  backgroundColor: AppColors.success,
+                                  backgroundColor: Colors.green,
                                   behavior: SnackBarBehavior.floating,
                                   shape: StadiumBorder(),
                                 ),
@@ -209,7 +203,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                                   content: Text(
                                     result["message"] ?? "Update failed",
                                   ),
-                                  backgroundColor: AppColors.error,
+                                  backgroundColor: Colors.red,
                                   behavior: SnackBarBehavior.floating,
                                   shape: StadiumBorder(),
                                 ),
@@ -240,7 +234,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
   ) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.8),
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.shade200, width: 1.5),
         boxShadow: [
@@ -255,7 +249,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
         controller: controller,
         decoration: InputDecoration(
           labelText: label,
-          prefixIcon: Icon(icon, color: const Color(0xFF6366F1), size: 22),
+          prefixIcon: Icon(icon, color: AppColors.primary, size: 22),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
             vertical: 18,
@@ -308,23 +302,17 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
 
   Widget _buildLoadingScreen() {
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF667eea), Color(0xFF764ba2), Color(0xFFF093FB)],
-        ),
-      ),
+      color: AppColors.background,
       child: const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
+            CircularProgressIndicator(color: AppColors.primary, strokeWidth: 3),
             SizedBox(height: 20),
             Text(
               "Loading Profile...",
               style: TextStyle(
-                color: Colors.white,
+                color: Colors.grey,
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
               ),
@@ -349,21 +337,9 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Color.lerp(
-                  AppColors.primary,
-                  AppColors.primaryDark,
-                  _gradientController.value,
-                )!,
-                Color.lerp(
-                  AppColors.primaryDark,
-                  AppColors.primaryLight,
-                  _gradientController.value * 0.7,
-                )!,
-                Color.lerp(
-                  AppColors.primaryLight,
-                  const Color(0xFF60A5FA),
-                  _gradientController.value * 0.3,
-                )!,
+                AppColors.primary,
+                AppColors.primary.withOpacity(0.8),
+                AppColors.primary.withOpacity(0.6),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -389,7 +365,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                         child: Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.25),
+                            color: AppColors.surface.withOpacity(0.25),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
                               color: Colors.white.withOpacity(0.3),
@@ -418,15 +394,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.white.withOpacity(0.4),
-                              Colors.white.withOpacity(0.1),
-                              Colors.white.withOpacity(0.4),
-                            ],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          ),
+                          color: Colors.white.withOpacity(0.4),
                           borderRadius: BorderRadius.circular(25),
                           boxShadow: [
                             BoxShadow(
@@ -464,26 +432,13 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
           width: double.infinity,
           padding: const EdgeInsets.all(28),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.white,
-                Colors.white.withOpacity(0.88),
-                Colors.white.withOpacity(0.75),
-              ],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
+            color: AppColors.surface,
             borderRadius: BorderRadius.circular(32),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.1),
                 blurRadius: 35,
                 offset: const Offset(0, 20),
-              ),
-              BoxShadow(
-                color: Colors.blue.withOpacity(0.08),
-                blurRadius: 60,
-                offset: const Offset(0, 12),
               ),
             ],
           ),
@@ -497,20 +452,16 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                 ],
               ),
               const SizedBox(height: 32),
-              _buildDetailRow(
-                "👤 Full Name",
-                nameController.text,
-                Icons.person,
-              ),
+              _buildDetailRow("Full Name", nameController.text, Icons.person),
               const SizedBox(height: 20),
               _buildDetailRow(
-                "✉️ Email Address",
+                "Email Address",
                 emailController.text,
                 Icons.email,
               ),
               const SizedBox(height: 20),
               _buildDetailRow(
-                "📱 Mobile Number",
+                "Mobile Number",
                 phoneController.text,
                 Icons.phone,
               ),
@@ -531,29 +482,16 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
             width: 100,
             height: 100,
             decoration: BoxDecoration(
+              color: AppColors.primary,
               borderRadius: BorderRadius.circular(28),
-              gradient: RadialGradient(
-                colors: const [
-                  Color(0xFF6366F1),
-                  Color(0xFF8B5CF6),
-                  Color(0xFF06B6D4),
-                  Color(0xFF10B981),
-                ],
-                stops: const [0.0, 0.3, 0.7, 1.0],
-              ),
+              border: Border.all(color: Colors.white, width: 4),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF6366F1).withOpacity(0.5),
+                  color: AppColors.primary.withOpacity(0.5),
                   blurRadius: 30,
                   offset: const Offset(0, 15),
                 ),
-                BoxShadow(
-                  color: const Color(0xFF8B5CF6).withOpacity(0.3),
-                  blurRadius: 50,
-                  offset: const Offset(0, 10),
-                ),
               ],
-              border: Border.all(color: Colors.white, width: 4),
             ),
             child: Center(
               child: Text(
@@ -564,13 +502,6 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                   fontSize: 38,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
-                  shadows: [
-                    Shadow(
-                      color: Colors.black45,
-                      offset: Offset(0, 3),
-                      blurRadius: 6,
-                    ),
-                  ],
                 ),
               ),
             ),
@@ -587,12 +518,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.white.withOpacity(0.95),
-                Colors.white.withOpacity(0.85),
-              ],
-            ),
+            color: AppColors.surface,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
@@ -604,13 +530,13 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
           ),
           child: TextButton.icon(
             onPressed: showEditProfileDialog,
-            icon: const Icon(Icons.edit, size: 20, color: Color(0xFF6366F1)),
-            label: const Text(
+            icon: Icon(Icons.edit, size: 20, color: AppColors.primary),
+            label: Text(
               "Edit Profile",
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF6366F1),
+                color: AppColors.primary,
               ),
             ),
           ),
@@ -625,7 +551,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
       children: [
         Row(
           children: [
-            Icon(icon, size: 20, color: const Color(0xFF6366F1)),
+            Icon(icon, size: 20, color: AppColors.primary),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -644,7 +570,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.7),
+            color: AppColors.surface.withOpacity(0.7),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: Colors.grey.shade100, width: 1),
             boxShadow: [
@@ -660,7 +586,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
             style: TextStyle(
               fontSize: 17,
               fontWeight: FontWeight.w600,
-              color: Colors.grey[900],
+              color: Colors.black87,
             ),
           ),
         ),
@@ -734,13 +660,11 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                   vertical: 8,
                 ),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                  ),
+                  color: AppColors.primary,
                   borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF6366F1).withOpacity(0.4),
+                      color: AppColors.primary.withOpacity(0.4),
                       blurRadius: 12,
                       offset: const Offset(0, 6),
                     ),
@@ -783,23 +707,15 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isDefault
-              ? [
-                  const Color(0xFF6366F1).withOpacity(0.12),
-                  Colors.white,
-                  Colors.white.withOpacity(0.92),
-                ]
-              : [Colors.white, Colors.white, Colors.white.withOpacity(0.88)],
-        ),
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(24),
         border: isDefault
-            ? Border.all(color: const Color(0xFF6366F1), width: 2.5)
+            ? Border.all(color: AppColors.primary, width: 2.5)
             : Border.all(color: Colors.grey.shade200, width: 1.5),
         boxShadow: [
           BoxShadow(
             color: isDefault
-                ? const Color(0xFF6366F1).withOpacity(0.25)
+                ? AppColors.primary.withOpacity(0.25)
                 : Colors.black.withOpacity(0.08),
             blurRadius: 25,
             offset: const Offset(0, 12),
@@ -814,9 +730,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: isDefault
-                      ? const Color(0xFF6366F1)
-                      : Colors.grey.shade300,
+                  color: isDefault ? AppColors.primary : Colors.grey.shade300,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(
@@ -832,7 +746,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Colors.grey[900],
+                    color: Colors.black87,
                   ),
                 ),
               ),
@@ -843,7 +757,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF6366F1),
+                    color: AppColors.primary,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Text(
@@ -957,7 +871,6 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
             child: InkWell(
               borderRadius: BorderRadius.circular(20),
               onTap: () {
-                // Handle menu item tap
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text("$title tapped!"),
@@ -972,13 +885,11 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-                        ),
+                        color: AppColors.primary,
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF6366F1).withOpacity(0.4),
+                            color: AppColors.primary.withOpacity(0.4),
                             blurRadius: 20,
                             offset: const Offset(0, 8),
                           ),
@@ -993,7 +904,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                         style: TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
-                          color: Colors.grey[900],
+                          color: Colors.black87,
                         ),
                       ),
                     ),
@@ -1019,9 +930,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
         return Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
-            gradient: LinearGradient(
-              colors: [Colors.white, Colors.white.withOpacity(0.9)],
-            ),
+            color: AppColors.surface,
             boxShadow: [
               BoxShadow(
                 color: Colors.red.withOpacity(0.25),
@@ -1082,14 +991,10 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
             height: 56,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              gradient: LinearGradient(
-                colors: isSecondary
-                    ? [Colors.grey.shade300, Colors.grey.shade200]
-                    : const [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-              ),
+              color: isSecondary ? Colors.grey.shade300 : AppColors.primary,
               boxShadow: [
                 BoxShadow(
-                  color: (isSecondary ? Colors.grey : const Color(0xFF6366F1))
+                  color: (isSecondary ? Colors.grey : AppColors.primary)
                       .withOpacity(isSecondary ? 0.3 : 0.4),
                   blurRadius: 20,
                   offset: const Offset(0, 10),
@@ -1129,26 +1034,13 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
       width: double.infinity,
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white,
-            Colors.white.withOpacity(0.94),
-            Colors.white.withOpacity(0.85),
-          ],
-        ),
+        color: AppColors.surface,
         borderRadius: BorderRadius.circular(32),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.08),
             blurRadius: 40,
             offset: const Offset(0, 20),
-          ),
-          BoxShadow(
-            color: Colors.blue.withOpacity(0.06),
-            blurRadius: 70,
-            offset: const Offset(0, 15),
           ),
         ],
       ),
@@ -1164,7 +1056,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF1F2937),
+                    color: Colors.black87,
                   ),
                 ),
                 if (action != null) action,
