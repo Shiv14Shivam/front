@@ -22,7 +22,12 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     with TickerProviderStateMixin {
   final ApiService api = ApiService();
 
-  // Haversine formula
+  // ═══════════════════════════════════════════════════════════════
+  // HAVERSINE DISTANCE FORMULA
+  // Used in the product detail modal to calculate delivery distance.
+  // Same formula used in CartPage — both use customer default address
+  // vs vendor warehouse address from their default address.
+  // ═══════════════════════════════════════════════════════════════
   double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
     const R = 6371.0;
     final dLat = (lat2 - lat1) * pi / 180;
@@ -36,24 +41,33 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
+  // ── Marketplace data ─────────────────────────────────────────
   List<dynamic> products = [];
   List<dynamic> filteredProducts = [];
   dynamic selectedProduct;
 
+  // ── Input controllers ────────────────────────────────────────
   final TextEditingController distanceController = TextEditingController();
   final TextEditingController quantityController = TextEditingController();
   final TextEditingController searchController = TextEditingController();
 
+  // ── UI state ─────────────────────────────────────────────────
   double totalCost = 0;
   bool isLoading = true;
   bool isLoadingDetails = false;
 
-  final List<Map<String, dynamic>> _cartItems = [];
+  // ── Cart badge count ─────────────────────────────────────────
+  // Loaded from GET /api/cart summary.total_items on init.
+  // Updated after each successful addToCart call.
+  // Displayed on the bottom nav cart icon.
+  int _cartCount = 0;
+
   int _selectedNavIndex = 0;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
+  // ── Category filter ──────────────────────────────────────────
   String selectedCategory = "All";
   List<String> categories = ["All"];
 
@@ -69,8 +83,27 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       curve: Curves.easeOut,
     );
     loadMarketplace();
+    _loadCartCount(); // Load real cart count from API on start
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // LOAD CART COUNT
+  // Calls GET /api/cart and reads summary.total_items.
+  // This keeps the bottom nav badge accurate on page load.
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> _loadCartCount() async {
+    final result = await api.getCart();
+    if (result["success"] == true) {
+      final summary = result["summary"];
+      setState(() => _cartCount = summary?["total_items"] ?? 0);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // LOAD MARKETPLACE
+  // Fetches all active listings from GET /api/marketplace (public).
+  // Extracts unique category names for the filter chips.
+  // ═══════════════════════════════════════════════════════════════
   Future<void> loadMarketplace() async {
     try {
       final data = await api.getMarketplaceListings();
@@ -91,6 +124,11 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // LOAD PRODUCT DETAILS
+  // Called when user taps a product card.
+  // Fetches full product info and merges with listing data.
+  // ═══════════════════════════════════════════════════════════════
   Future<void> loadProductDetails(dynamic listing) async {
     setState(() => isLoadingDetails = true);
     try {
@@ -117,6 +155,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     }
   }
 
+  // ── Search + category filter helpers ────────────────────────
   void filterProducts(String query) =>
       _applyFilters(query: query, category: selectedCategory);
 
@@ -159,7 +198,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     super.dispose();
   }
 
-  // ─────────────────────── BUILD ───────────────────────
+  // ─────────────────────── BUILD ───────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -188,7 +227,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── HEADER ───────────────────────
+  // ─────────────────────── HEADER ──────────────────────────────
   Widget _buildHeader() {
     return Container(
       decoration: const BoxDecoration(color: AppColors.primary),
@@ -303,7 +342,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── CATEGORY CHIPS ───────────────────────
+  // ─────────────────────── CATEGORY CHIPS ──────────────────────
   Widget _buildCategoryChips() {
     return Container(
       height: 54,
@@ -340,7 +379,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── PRODUCT GRID ───────────────────────
+  // ─────────────────────── PRODUCT GRID ────────────────────────
   Widget _buildProductGrid() {
     if (filteredProducts.isEmpty) {
       return Center(
@@ -604,7 +643,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── PRODUCT DETAIL MODAL ───────────────────────
+  // ─────────────────────── PRODUCT DETAIL MODAL ────────────────
   Widget _productDetailModal() {
     final p = selectedProduct;
     final product = p["product"];
@@ -633,7 +672,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                     borderRadius: BorderRadius.circular(26),
                     child: Column(
                       children: [
-                        // Image
+                        // ── Product image ──
                         Stack(
                           children: [
                             SizedBox(
@@ -716,7 +755,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Name & price
+                                // ── Name & price ──
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisAlignment:
@@ -760,7 +799,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
 
                                 const SizedBox(height: 12),
 
-                                // Seller card
+                                // ── Seller info card ──
                                 _card(
                                   child: Row(
                                     children: [
@@ -920,7 +959,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
 
                                 const SizedBox(height: 18),
 
-                                // Delivery charge
+                                // ── Delivery charge display ──
                                 Container(
                                   padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
@@ -982,7 +1021,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                 _sectionTitle("Calculate Your Cost"),
                                 const SizedBox(height: 8),
 
-                                // Info banner
+                                // Location info banner
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 12,
@@ -1031,7 +1070,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
 
                                 const SizedBox(height: 12),
 
-                                // Quantity + distance row
+                                // ── Quantity + Distance row ──
                                 Row(
                                   children: [
                                     Expanded(
@@ -1094,7 +1133,8 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     Expanded(
                                       child: TextField(
                                         controller: distanceController,
-                                        readOnly: true,
+                                        readOnly:
+                                            true, // Auto-filled by _calculateCost
                                         style: const TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500,
@@ -1170,6 +1210,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                   icon: Icons.shopping_cart_checkout_rounded,
                                 ),
 
+                                // ── Estimated cost result ──
                                 if (totalCost > 0) ...[
                                   const SizedBox(height: 14),
                                   Container(
@@ -1226,8 +1267,12 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── CALCULATE COST ───────────────────────
-  // customer default address  ↔  vendor default address
+  // ═══════════════════════════════════════════════════════════════
+  // CALCULATE COST
+  // Fetches customer's default address coordinates.
+  // Uses Haversine formula to compute distance to vendor warehouse.
+  // Fills the read-only distance field and calculates total cost.
+  // ═══════════════════════════════════════════════════════════════
   Future<void> _calculateCost() async {
     final qty = double.tryParse(quantityController.text.trim()) ?? 0;
     if (qty <= 0) {
@@ -1254,9 +1299,8 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       return;
     }
 
-    // Get customer default address with token
+    // Fetch customer's default address with coordinates
     final addressRes = await api.getDefaultAddress();
-
     if (!addressRes["success"]) {
       _snack(
         addressRes["message"] ?? "Set a default address in your profile first",
@@ -1276,6 +1320,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       return;
     }
 
+    // Calculate distance using Haversine formula
     final double dist = calculateDistance(
       vendorLat,
       vendorLng,
@@ -1296,46 +1341,80 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     });
   }
 
-  void _addToCart() {
+  // ═══════════════════════════════════════════════════════════════
+  // ADD TO CART
+  // Calls POST /api/cart with listing_id and quantity_bags.
+  // The quantity entered here is stored in Cart.quantity_bags in DB.
+  // CartPage reads this same quantity_bags — they are always in sync.
+  //
+  // Guards before calling API:
+  //   1. Quantity must be > 0
+  //   2. Distance must be calculated first
+  //   3. Quantity must not exceed available stock
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> _addToCart() async {
     final qty = double.tryParse(quantityController.text.trim()) ?? 0;
     final dist = double.tryParse(distanceController.text.trim()) ?? 0;
 
+    // Guard 1: Quantity required
     if (qty <= 0) {
       _snack("Enter a valid quantity", ok: false);
       return;
     }
+
+    // Guard 2: Distance must be calculated first
+    // This ensures customer has a default address set
     if (dist <= 0) {
       _snack("Calculate distance first", ok: false);
       return;
     }
 
     final p = selectedProduct;
-    final existingIdx = _cartItems.indexWhere(
-      (item) => item["listing"]["product"]["name"] == p["product"]["name"],
+    final listingId = p["id"] as int?;
+
+    if (listingId == null) {
+      _snack("Invalid listing", ok: false);
+      return;
+    }
+
+    // Guard 3: Check against available stock
+    final stock = p["available_stock_bags"] ?? 0;
+    if (qty > stock) {
+      _snack("Only $stock bags available in stock", ok: false);
+      return;
+    }
+
+    // Show loading overlay while API call runs
+    setState(() => isLoadingDetails = true);
+
+    // POST /api/cart — saves quantity_bags to DB
+    // Backend also does stock check + active listing check + own listing check
+    final result = await api.addToCart(
+      listingId: listingId,
+      quantityBags: qty.toInt(),
     );
 
-    if (existingIdx >= 0) {
-      setState(() {
-        _cartItems[existingIdx]["quantity"] = qty;
-        _cartItems[existingIdx]["distance"] = dist;
-      });
+    setState(() => isLoadingDetails = false);
+
+    if (result["success"] == true) {
+      // Increment cart badge count
+      setState(() => _cartCount++);
+
       _snack(
-        "${p["product"]["name"]} updated in cart",
-        ok: true,
-        icon: Icons.shopping_cart_outlined,
-      );
-    } else {
-      setState(
-        () => _cartItems.add({"listing": p, "quantity": qty, "distance": dist}),
-      );
-      _snack(
-        "${p["product"]["name"]} added to cart",
+        result["message"] ?? "${p["product"]["name"]} added to cart",
         ok: true,
         icon: Icons.shopping_cart_checkout_rounded,
       );
+    } else {
+      _snack(result["message"] ?? "Failed to add to cart", ok: false);
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // REQUEST ORDER
+  // Navigates to the order request page with pre-filled data.
+  // Requires quantity and distance to be filled (Calculate first).
+  // ═══════════════════════════════════════════════════════════════
   void _requestOrder() {
     final qty = double.tryParse(quantityController.text.trim()) ?? 0;
     final dist = double.tryParse(distanceController.text.trim()) ?? 0;
@@ -1393,7 +1472,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── HELPERS ───────────────────────
+  // ─────────────────────── HELPERS ─────────────────────────────
   Widget _card({required Widget child}) => Container(
     width: double.infinity,
     padding: const EdgeInsets.all(14),
@@ -1535,7 +1614,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── BOTTOM NAV ───────────────────────
+  // ─────────────────────── BOTTOM NAV ──────────────────────────
   Widget _bottomNav() {
     return Positioned(
       bottom: 0,
@@ -1566,19 +1645,19 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                   0,
                   () => setState(() => _selectedNavIndex = 0),
                 ),
+
+                // Cart badge uses _cartCount from API, not local list
                 _navBadge(
                   Icons.shopping_cart_rounded,
                   "Cart",
                   1,
-                  _cartItems.length,
+                  _cartCount, // ← real count from GET /api/cart
                   () {
                     setState(() => _selectedNavIndex = 1);
-                    widget.onSelectView(
-                      ViewType.cart,
-                      orderData: {"cartItems": _cartItems},
-                    );
+                    widget.onSelectView(ViewType.cart);
                   },
                 ),
+
                 _navItem(Icons.person_rounded, "Profile", 2, () {
                   setState(() => _selectedNavIndex = 2);
                   widget.onSelectView(ViewType.cutomerProfile);

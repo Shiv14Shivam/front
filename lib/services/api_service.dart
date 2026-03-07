@@ -73,13 +73,8 @@ Base URL : $_baseUrl
             data["access_token"] ??
             data["authorisation"]?["token"];
 
-        if (token != null) {
-          await _saveToken(token);
-        }
-
-        if (user != null) {
-          await _saveUser(user);
-        }
+        if (token != null) await _saveToken(token);
+        if (user != null) await _saveUser(user);
 
         return {
           "success": true,
@@ -266,7 +261,6 @@ Base URL : $_baseUrl
   Future<Map<String, dynamic>> logout() async {
     try {
       final token = await getToken();
-
       if (token == null) {
         return {"success": false, "message": "Not authenticated"};
       }
@@ -280,7 +274,6 @@ Base URL : $_baseUrl
       if (response.statusCode == 200) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.clear();
-
         return {
           "success": true,
           "message": data["message"] ?? "Logged out successfully",
@@ -308,8 +301,9 @@ Base URL : $_baseUrl
   }) async {
     try {
       final token = await getToken();
-      if (token == null)
+      if (token == null) {
         return {"success": false, "message": "Not authenticated"};
+      }
 
       final response = await http.put(
         Uri.parse("$_baseUrl/addresses/$id"),
@@ -325,9 +319,7 @@ Base URL : $_baseUrl
         }),
       );
 
-      if (response.statusCode == 200) {
-        return {"success": true};
-      }
+      if (response.statusCode == 200) return {"success": true};
       return {"success": false};
     } catch (e) {
       return {"success": false, "message": "Network error"};
@@ -369,7 +361,6 @@ Base URL : $_baseUrl
   }
 
   // ================= GET ADDRESSES =================
-  // FIX: Laravel returns a plain JSON array — extract correctly.
   Future<Map<String, dynamic>> getAddresses() async {
     try {
       final token = await getToken();
@@ -382,16 +373,11 @@ Base URL : $_baseUrl
         headers: _authHeaders(token),
       );
 
-      // Guard empty body
-      if (response.body.isEmpty) {
-        return {"success": true, "data": []};
-      }
+      if (response.body.isEmpty) return {"success": true, "data": []};
 
       final decoded = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        // Handle both plain array  →  [...]
-        //   and wrapped collection →  {"data": [...]}
         List<dynamic> list;
         if (decoded is List) {
           list = decoded;
@@ -442,7 +428,6 @@ Base URL : $_baseUrl
         }),
       );
 
-      // Guard empty body
       if (response.body.isEmpty) {
         return {"success": false, "message": "Empty response from server"};
       }
@@ -463,7 +448,6 @@ Base URL : $_baseUrl
   }
 
   // ================= GET DEFAULT ADDRESS =================
-  // FIX: guard empty/null body; handle 404 gracefully.
   Future<Map<String, dynamic>> getDefaultAddress() async {
     try {
       final token = await getToken();
@@ -471,7 +455,6 @@ Base URL : $_baseUrl
         return {"success": false, "message": "Not authenticated"};
       }
 
-      // ADD THIS
       print("🔑 Token: $token");
 
       final response = await http
@@ -481,7 +464,6 @@ Base URL : $_baseUrl
           )
           .timeout(const Duration(seconds: 15));
 
-      // ADD THIS
       print(
         "📍 Default address response: ${response.statusCode} ${response.body}",
       );
@@ -613,5 +595,179 @@ Base URL : $_baseUrl
     }
 
     throw Exception("Failed to load marketplace listings");
+  }
+
+  // ================= GET CART =================
+  // Called by:
+  //   CartPage._loadCart()        → loads all cart items on page open
+  //   CustomerHomePage._loadCartCount() → gets total_items for badge count
+  Future<Map<String, dynamic>> getCart() async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {"success": false, "message": "Not authenticated"};
+      }
+
+      final response = await http
+          .get(Uri.parse("$_baseUrl/cart"), headers: _authHeaders(token))
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty) {
+        return {"success": false, "message": "Empty response from server"};
+      }
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {
+          "success": true,
+          "data": data["data"], // list of CartItemResource
+          "summary": data["summary"], // {total_items, subtotal}
+        };
+      }
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to load cart",
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= ADD TO CART =================
+  // Sends listing_id + quantity_bags to POST /api/cart.
+  // Backend uses updateOrCreate — same listing won't be duplicated.
+  // Returns 201 if new item, 200 if quantity was updated.
+  //
+  // Called by: CustomerHomePage._addToCart()
+  // The quantity_bags saved here is the SAME value CartPage reads back.
+  Future<Map<String, dynamic>> addToCart({
+    required int listingId,
+    required int quantityBags,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {"success": false, "message": "Not authenticated"};
+      }
+
+      final response = await http
+          .post(
+            Uri.parse("$_baseUrl/cart"),
+            headers: _authHeaders(token),
+            body: jsonEncode({
+              "listing_id": listingId,
+              "quantity_bags": quantityBags,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty) {
+        return {"success": false, "message": "Empty response from server"};
+      }
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {
+          "success": true,
+          "message": data["message"],
+          "data": data["data"],
+        };
+      }
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to add to cart",
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= UPDATE CART ITEM =================
+  // Updates quantity_bags for an existing cart item.
+  // Called by CartPage when user taps + or - on a cart item.
+  // Uses optimistic UI — Flutter updates first, rolls back on failure.
+  Future<Map<String, dynamic>> updateCartItem(int id, int quantityBags) async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {"success": false, "message": "Not authenticated"};
+      }
+
+      final response = await http
+          .put(
+            Uri.parse("$_baseUrl/cart/$id"),
+            headers: _authHeaders(token),
+            body: jsonEncode({"quantity_bags": quantityBags}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty) {
+        return {"success": false, "message": "Empty response from server"};
+      }
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {"success": true, "data": data["data"]};
+      }
+
+      return {"success": false, "message": data["message"] ?? "Update failed"};
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= REMOVE CART ITEM =================
+  // Removes a single item from cart by cart item ID.
+  // Called by CartPage when user taps delete on an item.
+  // Uses optimistic UI — Flutter removes first, rolls back on failure.
+  Future<bool> removeCartItem(int id) async {
+    try {
+      final token = await getToken();
+      if (token == null) return false;
+
+      final response = await http
+          .delete(Uri.parse("$_baseUrl/cart/$id"), headers: _authHeaders(token))
+          .timeout(const Duration(seconds: 15));
+
+      return response.statusCode == 200;
+    } on TimeoutException {
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // ================= CLEAR CART =================
+  // Removes ALL items from the cart in one call.
+  // Called by CartPage when user confirms "Clear All" in the dialog.
+  Future<bool> clearCart() async {
+    try {
+      final token = await getToken();
+      if (token == null) return false;
+
+      final response = await http
+          .delete(
+            Uri.parse("$_baseUrl/cart/clear"),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      return response.statusCode == 200;
+    } on TimeoutException {
+      return false;
+    } catch (e) {
+      return false;
+    }
   }
 }

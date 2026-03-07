@@ -1,4 +1,6 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../view_type.dart';
 
@@ -18,42 +20,21 @@ class CartPage extends StatefulWidget {
 
 class _CartPageState extends State<CartPage>
     with SingleTickerProviderStateMixin {
+  // ── Animation ────────────────────────────────────────────────
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
-  // ── Hardcoded demo items — replace with API after backend ready ──
-  final List<Map<String, dynamic>> _cartItems = [
-    {
-      "name": "53 Grade OPC Cement",
-      "seller": "Ram Cement Depot",
-      "unit": "per bag",
-      "price": 380.0,
-      "deliveryPerKm": 6.0,
-      "emoji": "🧱",
-      "quantity": 10.0,
-      "distance": 5.0,
-    },
-    {
-      "name": "M-Sand (River Sand)",
-      "seller": "Krishna Sand Works",
-      "unit": "per ton",
-      "price": 1200.0,
-      "deliveryPerKm": 8.0,
-      "emoji": "⛏️",
-      "quantity": 3.0,
-      "distance": 8.0,
-    },
-    {
-      "name": "TMT Steel Bars",
-      "seller": "Shree Steel Mart",
-      "unit": "per kg",
-      "price": 65.0,
-      "deliveryPerKm": 10.0,
-      "emoji": "🔩",
-      "quantity": 50.0,
-      "distance": 12.0,
-    },
-  ];
+  // ── Services & State ─────────────────────────────────────────
+  final ApiService _api = ApiService();
+  List<Map<String, dynamic>> _cartItems = [];
+  bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
+
+  // ── Customer coordinates (from default address) ──────────────
+  // Used for Haversine distance calculation against vendor warehouse
+  double? _customerLat;
+  double? _customerLng;
 
   @override
   void initState() {
@@ -67,6 +48,7 @@ class _CartPageState extends State<CartPage>
       curve: Curves.easeOut,
     );
     _fadeController.forward();
+    _loadCart();
   }
 
   @override
@@ -75,7 +57,158 @@ class _CartPageState extends State<CartPage>
     super.dispose();
   }
 
-  // ── Computed totals ──────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════
+  // LOAD CART
+  // Fetches cart items + customer default address in parallel.
+  // Customer lat/lng is used to calculate distance to each vendor.
+  // Vendor lat/lng comes from listing.seller.warehouse_lat/lng
+  // which is populated from vendor's default address in CartItemResource.
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> _loadCart() async {
+    setState(() {
+      _isLoading = true;
+      _hasError = false;
+    });
+
+    try {
+      // Fetch both simultaneously for better performance
+      final results = await Future.wait([
+        _api.getCart(),
+        _api.getDefaultAddress(),
+      ]);
+
+      final cartResult = results[0];
+      final addressResult = results[1];
+
+      // Extract customer coordinates from their default address
+      // These are set when user saves/updates their address via Nominatim geocoding
+      if (addressResult["success"] == true) {
+        final addr = addressResult["data"];
+        _customerLat = double.tryParse(addr["latitude"]?.toString() ?? '');
+        _customerLng = double.tryParse(addr["longitude"]?.toString() ?? '');
+      }
+
+      if (cartResult["success"] == true) {
+        final List items = cartResult["data"] ?? [];
+
+        setState(() {
+          _cartItems = items.map<Map<String, dynamic>>((item) {
+            final listing = item["listing"];
+            final product = listing?["product"];
+            final seller = listing?["seller"];
+
+            // Vendor warehouse coordinates — populated from vendor's
+            // default address in CartItemResource → seller.addresses
+            final vendorLat = double.tryParse(
+              seller?["warehouse_lat"]?.toString() ?? '',
+            );
+            final vendorLng = double.tryParse(
+              seller?["warehouse_lng"]?.toString() ?? '',
+            );
+
+            // Auto-calculate real distance using Haversine formula
+            // Falls back to 5.0 km if either party has no coordinates
+            final distance =
+                (_customerLat != null &&
+                    _customerLng != null &&
+                    vendorLat != null &&
+                    vendorLng != null)
+                ? _calculateDistance(
+                    _customerLat!,
+                    _customerLng!,
+                    vendorLat,
+                    vendorLng,
+                  )
+                : 5.0;
+
+            return {
+              // Cart item ID — used for update/delete API calls
+              "id": item["id"],
+              "listing_id": item["listing_id"],
+
+              // quantity_bags is saved in DB when user adds to cart
+              // from CustomerHomePage → api.addToCart(listingId, quantityBags)
+              "quantity":
+                  double.tryParse(item["quantity_bags"]?.toString() ?? "1") ??
+                  1.0,
+
+              // Product display info
+              "name": product?["name"] ?? "Product",
+              "seller": seller?["name"] ?? "Seller",
+              "unit": product?["unit"] ?? "per bag",
+              "image_url": product?["image_url"],
+
+              // Pricing
+              "price":
+                  double.tryParse(
+                    listing?["price_per_bag"]?.toString() ?? "0",
+                  ) ??
+                  0.0,
+              "deliveryCharge":
+                  double.tryParse(
+                    listing?["delivery_charge_per_ton"]?.toString() ?? "0",
+                  ) ??
+                  0.0,
+
+              // Stock limit — used to cap quantity stepper in UI
+              "stock": listing?["available_stock_bags"] ?? 0,
+
+              // Whether current quantity is still fulfillable
+              // Backend calculates this live in CartItemResource
+              "in_stock": item["in_stock"] ?? true,
+
+              // Auto-calculated distance in km (Haversine)
+              "distance": distance,
+            };
+          }).toList();
+
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+          _errorMessage = cartResult["message"] ?? "Failed to load cart";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = "Something went wrong. Please try again.";
+      });
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // HAVERSINE DISTANCE FORMULA
+  // Calculates straight-line distance in km between two coordinates.
+  // Used to estimate delivery distance between customer and vendor.
+  // ═══════════════════════════════════════════════════════════════
+  double _calculateDistance(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
+    const R = 6371.0; // Earth radius in km
+    final dLat = _toRad(lat2 - lat1);
+    final dLng = _toRad(lng2 - lng1);
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(_toRad(lat1)) * cos(_toRad(lat2)) * sin(dLng / 2) * sin(dLng / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return double.parse((R * c).toStringAsFixed(1));
+  }
+
+  double _toRad(double deg) => deg * (pi / 180);
+
+  // ═══════════════════════════════════════════════════════════════
+  // COMPUTED TOTALS
+  // Subtotal  = sum of (price × quantity) for all items
+  // Delivery  = sum of (deliveryCharge × distance) for all items
+  // Grand     = subtotal + delivery
+  // ═══════════════════════════════════════════════════════════════
   double get _subtotal => _cartItems.fold(
     0,
     (sum, item) =>
@@ -85,37 +218,102 @@ class _CartPageState extends State<CartPage>
   double get _deliveryTotal => _cartItems.fold(
     0,
     (sum, item) =>
-        sum + (item["deliveryPerKm"] as double) * (item["distance"] as double),
+        sum + (item["deliveryCharge"] as double) * (item["distance"] as double),
   );
 
   double get _grandTotal => _subtotal + _deliveryTotal;
 
-  // ── Actions ──────────────────────────────────────────────────
-  void _removeItem(int index) {
+  // ═══════════════════════════════════════════════════════════════
+  // REMOVE ITEM
+  // Uses optimistic UI — removes from screen immediately,
+  // rolls back if API call fails.
+  // Calls DELETE /api/cart/{id}
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> _removeItem(int index) async {
+    final id = _cartItems[index]["id"] as int;
+    final name = _cartItems[index]["name"] as String;
+    final removed = _cartItems[index]; // save for rollback
+
+    // Optimistic: remove from UI immediately
     setState(() => _cartItems.removeAt(index));
-    _showSnack("Item removed", isSuccess: false, icon: Icons.delete_outline);
+
+    final success = await _api.removeCartItem(id);
+
+    if (!success) {
+      // Rollback if API failed
+      setState(() => _cartItems.insert(index, removed));
+      _showSnack("Failed to remove item", isSuccess: false);
+    } else {
+      _showSnack("$name removed", isSuccess: false, icon: Icons.delete_outline);
+    }
   }
 
-  void _updateQuantity(int index, double newQty) {
+  // ═══════════════════════════════════════════════════════════════
+  // UPDATE QUANTITY
+  // Validates against stock limit before calling API.
+  // Uses optimistic UI — updates immediately, rolls back on failure.
+  // Removes item if quantity reaches 0.
+  // Calls PUT /api/cart/{id} with new quantity_bags
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> _updateQuantity(int index, double newQty) async {
+    // Remove item if quantity drops to 0
     if (newQty <= 0) {
       _removeItem(index);
       return;
     }
+
+    final id = _cartItems[index]["id"] as int;
+    final oldQty = _cartItems[index]["quantity"] as double;
+    final maxStock = _cartItems[index]["stock"] as int;
+
+    // Cap at available stock
+    if (newQty > maxStock) {
+      _showSnack("Only $maxStock bags available", isSuccess: false);
+      return;
+    }
+
+    // Optimistic: update UI immediately
     setState(() => _cartItems[index]["quantity"] = newQty);
+
+    // Sync with backend
+    final result = await _api.updateCartItem(id, newQty.toInt());
+
+    if (result["success"] != true) {
+      // Rollback on failure
+      setState(() => _cartItems[index]["quantity"] = oldQty);
+      _showSnack(result["message"] ?? "Update failed", isSuccess: false);
+    }
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // CLEAR CART
+  // Calls DELETE /api/cart/clear — removes all items for this user.
+  // ═══════════════════════════════════════════════════════════════
+  Future<void> _clearCart() async {
+    final success = await _api.clearCart();
+    if (success) {
+      setState(() => _cartItems.clear());
+    } else {
+      _showSnack("Failed to clear cart", isSuccess: false);
+    }
+  }
+
+  // ── Checkout ─────────────────────────────────────────────────
   void _checkout() {
     if (_cartItems.isEmpty) {
       _showSnack("Your cart is empty", isSuccess: false);
       return;
     }
+    // TODO: Navigate to order confirmation page
+    // widget.onSelectView(ViewType.checkout, orderData: {...})
     _showSnack(
-      "Checkout coming after backend!",
+      "Proceeding to checkout...",
       isSuccess: true,
       icon: Icons.check_circle_rounded,
     );
   }
 
+  // ── Snackbar helper ──────────────────────────────────────────
   void _showSnack(
     String msg, {
     required bool isSuccess,
@@ -144,7 +342,9 @@ class _CartPageState extends State<CartPage>
     );
   }
 
-  // ─────────────────────── BUILD ───────────────────────────────
+  // ═══════════════════════════════════════════════════════════════
+  // BUILD
+  // ═══════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -154,153 +354,168 @@ class _CartPageState extends State<CartPage>
         child: Column(
           children: [
             _buildHeader(),
+            Expanded(child: _buildBody()),
+          ],
+        ),
+      ),
+      bottomSheet: (!_isLoading && !_hasError && _cartItems.isNotEmpty)
+          ? _buildCheckoutBar()
+          : null,
+    );
+  }
+
+  // ── Body switcher ────────────────────────────────────────────
+  Widget _buildBody() {
+    if (_isLoading) return _buildLoadingState();
+    if (_hasError) return _buildErrorState();
+    if (_cartItems.isEmpty) return _buildEmptyState();
+
+    return RefreshIndicator(
+      onRefresh: _loadCart,
+      color: AppColors.primary,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 160),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Warn user if no default address — distance will be estimated
+            if (_customerLat == null) _buildNoAddressBanner(),
+
+            _buildCountBadge(),
+            const SizedBox(height: 16),
+
+            // Render each cart item card
+            ..._cartItems.asMap().entries.map(
+              (e) => _cartItemCard(e.key, e.value),
+            ),
+
+            const SizedBox(height: 20),
+            _buildSummaryCard(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Loading shimmer ──────────────────────────────────────────
+  Widget _buildLoadingState() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: 3,
+      itemBuilder: (_, i) => _shimmerCard(),
+    );
+  }
+
+  Widget _shimmerCard() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      height: 140,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            _shimmerBox(52, 52, radius: 14),
+            const SizedBox(width: 12),
             Expanded(
-              child: _cartItems.isEmpty
-                  ? _buildEmptyState()
-                  : SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(16, 20, 16, 140),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Item count badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 5,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryMuted,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              "${_cartItems.length} item${_cartItems.length == 1 ? '' : 's'} in cart",
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Cart item cards
-                          ..._cartItems.asMap().entries.map(
-                            (e) => _cartItemCard(e.key, e.value),
-                          ),
-
-                          const SizedBox(height: 20),
-                          _buildSummaryCard(),
-                        ],
-                      ),
-                    ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _shimmerBox(12, double.infinity),
+                  const SizedBox(height: 8),
+                  _shimmerBox(10, 140),
+                  const SizedBox(height: 8),
+                  _shimmerBox(10, 100),
+                ],
+              ),
             ),
           ],
         ),
       ),
-      bottomSheet: _cartItems.isEmpty ? null : _buildCheckoutBar(),
     );
   }
 
-  // ── Header ───────────────────────────────────────────────────
-  Widget _buildHeader() {
-    return Container(
-      decoration: const BoxDecoration(color: AppColors.primary),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-          child: Row(
-            children: [
-              _headerIconBtn(
-                Icons.arrow_back_ios_new_rounded,
-                () => widget.onSelectView(ViewType.customerHome),
+  Widget _shimmerBox(double h, double w, {double radius = 8}) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.4, end: 0.9),
+      duration: const Duration(milliseconds: 900),
+      builder: (_, v, __) => Container(
+        height: h,
+        width: w,
+        decoration: BoxDecoration(
+          color: AppColors.border.withOpacity(v),
+          borderRadius: BorderRadius.circular(radius),
+        ),
+      ),
+    );
+  }
+
+  // ── Error state ──────────────────────────────────────────────
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppColors.error.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(24),
               ),
-              const Spacer(),
-              const Text(
-                "My Cart",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3,
+              child: Icon(
+                Icons.wifi_off_rounded,
+                size: 40,
+                color: AppColors.error,
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              "Couldn't load cart",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.titleText,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: AppColors.bodyText),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _loadCart,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text("Try Again"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              const Spacer(),
-              if (_cartItems.isNotEmpty)
-                GestureDetector(
-                  onTap: () => showDialog(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      title: const Text(
-                        "Clear Cart",
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      content: const Text("Remove all items from your cart?"),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text("Cancel"),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            setState(() => _cartItems.clear());
-                            Navigator.pop(context);
-                          },
-                          child: Text(
-                            "Clear All",
-                            style: TextStyle(color: AppColors.error),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.2),
-                        width: 1,
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.delete_sweep_outlined,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                )
-              else
-                const SizedBox(width: 38),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _headerIconBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
-        ),
-        child: Icon(icon, color: Colors.white, size: 18),
-      ),
-    );
-  }
-
-  // ── Empty state ───────────────────────────────────────────────
+  // ── Empty state ──────────────────────────────────────────────
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -363,21 +578,170 @@ class _CartPageState extends State<CartPage>
     );
   }
 
-  // ── Cart item card ────────────────────────────────────────────
+  // ── No address warning banner ────────────────────────────────
+  Widget _buildNoAddressBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.location_off_outlined,
+            color: Colors.orange,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              "No default address set. Delivery distance is estimated.",
+              style: TextStyle(fontSize: 12, color: Colors.orange),
+            ),
+          ),
+          GestureDetector(
+            onTap: () => widget.onSelectView(ViewType.cutomerProfile),
+            child: const Text(
+              "Add",
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Item count badge ─────────────────────────────────────────
+  Widget _buildCountBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.primaryMuted,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        "${_cartItems.length} item${_cartItems.length == 1 ? '' : 's'} in cart",
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primary,
+        ),
+      ),
+    );
+  }
+
+  // ── Header ───────────────────────────────────────────────────
+  Widget _buildHeader() {
+    return Container(
+      decoration: const BoxDecoration(color: AppColors.primary),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+          child: Row(
+            children: [
+              _headerIconBtn(
+                Icons.arrow_back_ios_new_rounded,
+                () => widget.onSelectView(ViewType.customerHome),
+              ),
+              const Spacer(),
+              const Text(
+                "My Cart",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const Spacer(),
+              if (_cartItems.isNotEmpty)
+                GestureDetector(
+                  onTap: () => showDialog(
+                    context: context,
+                    builder: (_) => AlertDialog(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      title: const Text(
+                        "Clear Cart",
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      content: const Text("Remove all items from your cart?"),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text("Cancel"),
+                        ),
+                        TextButton(
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            await _clearCart();
+                          },
+                          child: Text(
+                            "Clear All",
+                            style: TextStyle(color: AppColors.error),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  child: _headerIconBtn(Icons.delete_sweep_outlined, () {}),
+                )
+              else
+                const SizedBox(width: 38),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _headerIconBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+        ),
+        child: Icon(icon, color: Colors.white, size: 18),
+      ),
+    );
+  }
+
+  // ── Cart item card ───────────────────────────────────────────
   Widget _cartItemCard(int index, Map<String, dynamic> item) {
     final qty = item["quantity"] as double;
     final dist = item["distance"] as double;
     final price = item["price"] as double;
-    final charge = item["deliveryPerKm"] as double;
+    final charge = item["deliveryCharge"] as double;
+    final stock = item["stock"] as int;
+    final inStock = item["in_stock"] as bool;
+
+    // Item total = (price × qty) + (delivery charge × distance)
     final itemTotal = price * qty + charge * dist;
-    final distCtrl = TextEditingController(text: dist.toStringAsFixed(0));
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border, width: 1),
+        border: Border.all(
+          // Red border if stock is insufficient for this quantity
+          color: inStock ? AppColors.border : AppColors.error.withOpacity(0.4),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -389,28 +753,13 @@ class _CartPageState extends State<CartPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Top row ──
+          // ── Top row: image, name, seller, price, delete ──
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Emoji avatar
-                Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceAlt,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Center(
-                    child: Text(
-                      item["emoji"] as String,
-                      style: const TextStyle(fontSize: 26),
-                    ),
-                  ),
-                ),
+                _productAvatar(item["image_url"]),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -437,21 +786,30 @@ class _CartPageState extends State<CartPage>
                         spacing: 6,
                         children: [
                           _chip(
-                            "₹${price.toStringAsFixed(0)} ${item["unit"]}",
+                            "₹${price.toStringAsFixed(0)} / ${item["unit"]}",
                             AppColors.primaryMuted,
                             AppColors.primary,
                           ),
                           _chip(
-                            "₹${charge.toStringAsFixed(0)}/km delivery",
+                            "₹${charge.toStringAsFixed(0)}/ton delivery",
                             AppColors.primaryMuted,
                             AppColors.primary,
                           ),
                         ],
                       ),
+                      // Out of stock warning chip
+                      if (!inStock) ...[
+                        const SizedBox(height: 4),
+                        _chip(
+                          "Insufficient stock",
+                          AppColors.error.withOpacity(0.1),
+                          AppColors.error,
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                // Remove button
+                // Delete button — calls DELETE /api/cart/{id}
                 GestureDetector(
                   onTap: () => _removeItem(index),
                   child: Container(
@@ -473,23 +831,38 @@ class _CartPageState extends State<CartPage>
 
           Divider(height: 1, color: AppColors.border.withOpacity(0.6)),
 
-          // ── Quantity stepper + Distance input ──
+          // ── Quantity stepper + Distance display ──
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: Row(
               children: [
                 // Quantity stepper
+                // +/- calls PUT /api/cart/{id} with updated quantity_bags
+                // This quantity is the SAME as what was set in CustomerHomePage
+                // Both read/write to Cart.quantity_bags in the database
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        "Quantity",
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.bodyText,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      Row(
+                        children: [
+                          const Text(
+                            "Quantity",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.bodyText,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            "(max $stock)",
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: AppColors.bodyText.withOpacity(0.6),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 6),
                       Container(
@@ -501,6 +874,7 @@ class _CartPageState extends State<CartPage>
                         ),
                         child: Row(
                           children: [
+                            // Decrease
                             GestureDetector(
                               onTap: () => _updateQuantity(index, qty - 1),
                               child: Container(
@@ -519,6 +893,7 @@ class _CartPageState extends State<CartPage>
                                 ),
                               ),
                             ),
+                            // Current quantity value
                             Expanded(
                               child: Text(
                                 qty % 1 == 0
@@ -532,6 +907,7 @@ class _CartPageState extends State<CartPage>
                                 ),
                               ),
                             ),
+                            // Increase
                             GestureDetector(
                               onTap: () => _updateQuantity(index, qty + 1),
                               child: Container(
@@ -556,14 +932,19 @@ class _CartPageState extends State<CartPage>
                     ],
                   ),
                 ),
+
                 const SizedBox(width: 12),
-                // Distance input
+
+                // Distance display — READ ONLY
+                // Auto-calculated via Haversine using:
+                //   customer lat/lng (from their default address)
+                //   vendor lat/lng (from vendor's default address via CartItemResource)
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        "Distance (km)",
+                        "Distance",
                         style: TextStyle(
                           fontSize: 11,
                           color: AppColors.bodyText,
@@ -571,57 +952,50 @@ class _CartPageState extends State<CartPage>
                         ),
                       ),
                       const SizedBox(height: 6),
-                      SizedBox(
+                      Container(
                         height: 40,
-                        child: TextField(
-                          controller: distCtrl,
-                          keyboardType: TextInputType.number,
-                          onChanged: (v) {
-                            final d = double.tryParse(v);
-                            if (d != null) {
-                              setState(() => _cartItems[index]["distance"] = d);
-                            }
-                          },
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.titleText,
-                          ),
-                          textAlign: TextAlign.center,
-                          decoration: InputDecoration(
-                            hintText: "km",
-                            hintStyle: const TextStyle(
-                              color: AppColors.subtleText,
-                              fontSize: 13,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              // Green pin if real coords, orange if estimated
+                              _customerLat != null
+                                  ? Icons.location_on_rounded
+                                  : Icons.location_off_outlined,
+                              size: 14,
+                              color: _customerLat != null
+                                  ? AppColors.primary
+                                  : Colors.orange,
                             ),
-                            prefixIcon: const Icon(
-                              Icons.swap_vert,
-                              size: 16,
-                              color: AppColors.primary,
-                            ),
-                            filled: true,
-                            fillColor: AppColors.background,
-                            contentPadding: const EdgeInsets.symmetric(
-                              vertical: 10,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: AppColors.border),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: AppColors.border),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: AppColors.primary,
-                                width: 1.5,
+                            const SizedBox(width: 5),
+                            Text(
+                              "${dist.toStringAsFixed(1)} km",
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.titleText,
                               ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (_customerLat == null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Text(
+                            "Estimated",
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: Colors.orange.withOpacity(0.8),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -643,7 +1017,7 @@ class _CartPageState extends State<CartPage>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "qty: ${qty % 1 == 0 ? qty.toInt() : qty}  ·  ${dist.toStringAsFixed(0)} km",
+                  "qty: ${qty % 1 == 0 ? qty.toInt() : qty}  ·  ${dist.toStringAsFixed(1)} km",
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.bodyText,
@@ -666,7 +1040,37 @@ class _CartPageState extends State<CartPage>
     );
   }
 
-  // ── Order summary card ────────────────────────────────────────
+  // ── Product image with fallback ──────────────────────────────
+  Widget _productAvatar(String? imageUrl) {
+    if (imageUrl != null && imageUrl.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Image.network(
+          imageUrl,
+          width: 52,
+          height: 52,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _fallbackAvatar(),
+        ),
+      );
+    }
+    return _fallbackAvatar();
+  }
+
+  Widget _fallbackAvatar() {
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: const Center(child: Text("🧱", style: TextStyle(fontSize: 26))),
+    );
+  }
+
+  // ── Order summary card ───────────────────────────────────────
   Widget _buildSummaryCard() {
     return Container(
       width: double.infinity,
@@ -702,6 +1106,31 @@ class _CartPageState extends State<CartPage>
             "Delivery charges",
             "₹${_deliveryTotal.toStringAsFixed(2)}",
           ),
+
+          // Disclaimer if delivery distance is estimated
+          if (_customerLat == null) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 12,
+                  color: Colors.orange.withOpacity(0.8),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    "Delivery is estimated (no default address set)",
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.orange.withOpacity(0.8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
           const SizedBox(height: 14),
           Divider(height: 1, color: AppColors.border.withOpacity(0.7)),
           const SizedBox(height: 14),
@@ -832,7 +1261,7 @@ class _CartPageState extends State<CartPage>
     );
   }
 
-  // ── Chip helper ───────────────────────────────────────────────
+  // ── Chip helper ──────────────────────────────────────────────
   Widget _chip(String label, Color bg, Color fg) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
