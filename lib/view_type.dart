@@ -10,4 +10,6 @@ enum ViewType {
   vendorProfile,
   addressForm,
   listNewProduct,
+  requestOrder,
+  cart,
 }

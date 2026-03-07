@@ -39,7 +39,7 @@ Base URL : $_baseUrl
     "Host": "sandbackend.test",
   };
 
-  // ================= LOGIN (FIXED) =================
+  // ================= LOGIN =================
   Future<Map<String, dynamic>> login(
     String email,
     String password, {
@@ -53,7 +53,7 @@ Base URL : $_baseUrl
             body: jsonEncode({
               "email": email,
               "password": password,
-              "role": role, // sent to backend
+              "role": role,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -64,7 +64,6 @@ Base URL : $_baseUrl
         final user = data["user"];
         final returnedRole = user?["role"];
 
-        // 🔐 ROLE CHECK (CRITICAL FIX)
         if (returnedRole != role) {
           return {"success": false, "message": "Invalid Credentials"};
         }
@@ -144,7 +143,6 @@ Base URL : $_baseUrl
         "phone": phone,
       };
 
-      // Add vendor fields only if role is vendor
       if (role == "vendor") {
         body["firm_name"] = firmName;
         body["business_type"] = businessType;
@@ -197,7 +195,6 @@ Base URL : $_baseUrl
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        // Handle both wrapped and direct responses
         return {"success": true, "user": data["user"] ?? data};
       }
 
@@ -231,7 +228,6 @@ Base URL : $_baseUrl
         "phone": phone,
       };
 
-      // Add vendor fields only if provided
       if (firmName != null) body["firm_name"] = firmName;
       if (businessType != null) body["business_type"] = businessType;
       if (gstNumber != null) body["gst_number"] = gstNumber;
@@ -299,6 +295,7 @@ Base URL : $_baseUrl
     }
   }
 
+  // ================= UPDATE ADDRESS =================
   Future<Map<String, dynamic>> updateAddress(
     int id, {
     required String label,
@@ -311,9 +308,12 @@ Base URL : $_baseUrl
   }) async {
     try {
       final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
       final response = await http.put(
         Uri.parse("$_baseUrl/addresses/$id"),
-        headers: _authHeaders(token!),
+        headers: _authHeaders(token),
         body: jsonEncode({
           "label": label,
           "address_line_1": line1,
@@ -328,19 +328,21 @@ Base URL : $_baseUrl
       if (response.statusCode == 200) {
         return {"success": true};
       }
-
       return {"success": false};
     } catch (e) {
-      return {"success": false};
+      return {"success": false, "message": "Network error"};
     }
   }
 
+  // ================= DELETE ADDRESS =================
   Future<bool> deleteAddress(int id) async {
     try {
       final token = await getToken();
+      if (token == null) return false;
+
       final response = await http.delete(
         Uri.parse("$_baseUrl/addresses/$id"),
-        headers: _authHeaders(token!),
+        headers: _authHeaders(token),
       );
 
       return response.statusCode == 200;
@@ -349,12 +351,15 @@ Base URL : $_baseUrl
     }
   }
 
+  // ================= SET DEFAULT ADDRESS =================
   Future<bool> setDefaultAddress(int id) async {
     try {
       final token = await getToken();
+      if (token == null) return false;
+
       final response = await http.post(
         Uri.parse("$_baseUrl/addresses/$id/default"),
-        headers: _authHeaders(token!),
+        headers: _authHeaders(token),
       );
 
       return response.statusCode == 200;
@@ -364,6 +369,7 @@ Base URL : $_baseUrl
   }
 
   // ================= GET ADDRESSES =================
+  // FIX: Laravel returns a plain JSON array — extract correctly.
   Future<Map<String, dynamic>> getAddresses() async {
     try {
       final token = await getToken();
@@ -376,18 +382,33 @@ Base URL : $_baseUrl
         headers: _authHeaders(token),
       );
 
-      final data = jsonDecode(response.body);
-
-      if (response.statusCode == 200) {
-        return {"success": true, "data": data};
+      // Guard empty body
+      if (response.body.isEmpty) {
+        return {"success": true, "data": []};
       }
 
-      return {
-        "success": false,
-        "message": data["message"] ?? "Failed to fetch addresses",
-      };
+      final decoded = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        // Handle both plain array  →  [...]
+        //   and wrapped collection →  {"data": [...]}
+        List<dynamic> list;
+        if (decoded is List) {
+          list = decoded;
+        } else if (decoded is Map && decoded.containsKey("data")) {
+          list = decoded["data"] as List<dynamic>;
+        } else {
+          list = [];
+        }
+        return {"success": true, "data": list};
+      }
+
+      final msg = (decoded is Map)
+          ? (decoded["message"] ?? "Failed to fetch addresses")
+          : "Failed to fetch addresses";
+      return {"success": false, "message": msg};
     } catch (e) {
-      return {"success": false, "message": "Network error"};
+      return {"success": false, "message": "Network error: $e"};
     }
   }
 
@@ -421,6 +442,11 @@ Base URL : $_baseUrl
         }),
       );
 
+      // Guard empty body
+      if (response.body.isEmpty) {
+        return {"success": false, "message": "Empty response from server"};
+      }
+
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -432,7 +458,58 @@ Base URL : $_baseUrl
         "message": data["message"] ?? "Failed to add address",
       };
     } catch (e) {
-      return {"success": false, "message": "Network error"};
+      return {"success": false, "message": "Network error: $e"};
+    }
+  }
+
+  // ================= GET DEFAULT ADDRESS =================
+  // FIX: guard empty/null body; handle 404 gracefully.
+  Future<Map<String, dynamic>> getDefaultAddress() async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {"success": false, "message": "Not authenticated"};
+      }
+
+      // ADD THIS
+      print("🔑 Token: $token");
+
+      final response = await http
+          .get(
+            Uri.parse("$_baseUrl/address/default"),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      // ADD THIS
+      print(
+        "📍 Default address response: ${response.statusCode} ${response.body}",
+      );
+
+      if (response.body.isEmpty) {
+        return {"success": false, "message": "No default address found"};
+      }
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        if (data["latitude"] == null || data["longitude"] == null) {
+          return {
+            "success": false,
+            "message": "Default address has no coordinates. Please re-save it.",
+          };
+        }
+        return {"success": true, "data": data};
+      }
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "No default address found",
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error: $e"};
     }
   }
 
@@ -445,7 +522,7 @@ Base URL : $_baseUrl
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      return data["data"]; // because you used Resource::collection
+      return data["data"];
     }
 
     throw Exception("Failed to load categories");
@@ -457,7 +534,7 @@ Base URL : $_baseUrl
 
     final response = await http.get(
       Uri.parse("$_baseUrl/categories/$categoryId/brands"),
-      headers: _authHeaders(token!), // ✅ send token
+      headers: _authHeaders(token!),
     );
 
     if (response.statusCode == 200) {
@@ -475,7 +552,7 @@ Base URL : $_baseUrl
 
     final response = await http.get(
       Uri.parse("$_baseUrl/brands/$brandId/products"),
-      headers: _authHeaders(token!), // ✅ send token
+      headers: _authHeaders(token!),
     );
 
     if (response.statusCode == 200) {
@@ -532,8 +609,7 @@ Base URL : $_baseUrl
 
     if (response.statusCode == 200) {
       final decoded = jsonDecode(response.body);
-
-      return decoded["data"]; // ✅ CORRECT
+      return decoded["data"];
     }
 
     throw Exception("Failed to load marketplace listings");

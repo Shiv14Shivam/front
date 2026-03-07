@@ -12,7 +12,7 @@ class CustomerProfilePage extends StatefulWidget {
 }
 
 class _CustomerProfilePageState extends State<CustomerProfilePage>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   final nameController = TextEditingController();
   final emailController = TextEditingController();
@@ -21,39 +21,23 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
   List<dynamic> addresses = [];
   bool isLoading = true;
 
-  late AnimationController _gradientController;
-  late AnimationController _shimmerController;
-  late AnimationController _pulseController;
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnim;
 
   @override
   void initState() {
     super.initState();
-    _initializeAnimations();
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
     fetchData();
-  }
-
-  void _initializeAnimations() {
-    _gradientController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 4),
-    )..repeat(reverse: true);
-
-    _shimmerController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat();
-
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
   }
 
   @override
   void dispose() {
-    _gradientController.dispose();
-    _shimmerController.dispose();
-    _pulseController.dispose();
+    _fadeController.dispose();
     nameController.dispose();
     emailController.dispose();
     phoneController.dispose();
@@ -62,7 +46,6 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
 
   Future<void> fetchData() async {
     setState(() => isLoading = true);
-
     try {
       final profile = await _apiService.getProfile();
       final addressRes = await _apiService.getAddresses();
@@ -74,8 +57,11 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
         phoneController.text = user["phone"] ?? "";
       }
 
+      // getAddresses() always returns normalized List inside "data"
       if (addressRes["success"]) {
-        addresses = List<dynamic>.from(addressRes["data"] ?? []);
+        setState(() {
+          addresses = List<dynamic>.from(addressRes["data"] ?? []);
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -86,6 +72,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     } finally {
       if (mounted) {
         setState(() => isLoading = false);
+        _fadeController.forward();
       }
     }
   }
@@ -93,10 +80,8 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
   Future<void> logoutUser() async {
     try {
       final result = await _apiService.logout();
-      if (result["success"]) {
-        widget.onSelectView(ViewType.login);
-      }
-    } catch (e) {
+      if (result["success"]) widget.onSelectView(ViewType.login);
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -114,14 +99,14 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
       context: context,
       builder: (context) => Dialog(
         backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(20),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
             color: AppColors.surface,
+            borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
+                color: Colors.black.withOpacity(0.15),
                 blurRadius: 40,
                 offset: const Offset(0, 20),
               ),
@@ -130,83 +115,98 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Handle
               Container(
-                margin: const EdgeInsets.only(top: 16),
-                width: 60,
-                height: 4,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(2),
-                  color: AppColors.primary,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 20,
                 ),
-              ),
-              // Content
-              Padding(
-                padding: const EdgeInsets.all(28),
-                child: Column(
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                ),
+                child: Row(
                   children: [
-                    Text(
+                    const Icon(
+                      Icons.edit_outlined,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
                       "Edit Profile",
                       style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
                       ),
                     ),
-                    const SizedBox(height: 28),
-                    _buildPremiumTextField(nameEdit, "Full Name", Icons.person),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.white70,
+                        size: 22,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  children: [
+                    _buildTextField(
+                      nameEdit,
+                      "Full Name",
+                      Icons.person_outline,
+                    ),
                     const SizedBox(height: 16),
-                    _buildPremiumTextField(emailEdit, "Email", Icons.email),
+                    _buildTextField(
+                      emailEdit,
+                      "Email Address",
+                      Icons.email_outlined,
+                    ),
                     const SizedBox(height: 16),
-                    _buildPremiumTextField(phoneEdit, "Mobile", Icons.phone),
+                    _buildTextField(
+                      phoneEdit,
+                      "Mobile Number",
+                      Icons.phone_outlined,
+                    ),
                     const SizedBox(height: 28),
                     Row(
                       children: [
                         Expanded(
-                          child: _buildPremiumButton(
+                          child: _buildOutlinedButton(
                             "Cancel",
                             () => Navigator.pop(context),
-                            isSecondary: true,
                           ),
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 12),
                         Expanded(
-                          key: ValueKey(_pulseController.hashCode),
-                          child: _buildPremiumButton("Save Changes", () async {
+                          child: _buildPrimaryButton("Save", () async {
                             Navigator.pop(context);
-
                             final result = await _apiService.updateProfile(
                               nameEdit.text.trim(),
                               emailEdit.text.trim(),
                               phoneEdit.text.trim(),
                             );
-
                             if (result["success"] && mounted) {
                               setState(() {
                                 nameController.text = nameEdit.text.trim();
                                 emailController.text = emailEdit.text.trim();
                                 phoneController.text = phoneEdit.text.trim();
                               });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    "Profile updated successfully!",
-                                  ),
-                                  backgroundColor: Colors.green,
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: StadiumBorder(),
-                                ),
+                              _showSnack(
+                                "Profile updated successfully",
+                                isSuccess: true,
                               );
                             } else if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    result["message"] ?? "Update failed",
-                                  ),
-                                  backgroundColor: Colors.red,
-                                  behavior: SnackBarBehavior.floating,
-                                  shape: StadiumBorder(),
-                                ),
+                              _showSnack(
+                                result["message"] ?? "Update failed",
+                                isSuccess: false,
                               );
                             }
                           }),
@@ -227,41 +227,25 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     });
   }
 
-  Widget _buildPremiumTextField(
-    TextEditingController controller,
-    String label,
-    IconData icon,
-  ) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: TextField(
-        controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon, color: AppColors.primary, size: 22),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            vertical: 18,
-            horizontal: 20,
-          ),
-          labelStyle: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w500,
-          ),
+  void _showSnack(String msg, {required bool isSuccess}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isSuccess ? Icons.check_circle : Icons.error_outline,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Text(msg, style: const TextStyle(fontWeight: FontWeight.w500)),
+          ],
         ),
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+        backgroundColor: isSuccess ? AppColors.success : AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
       ),
     );
   }
@@ -271,537 +255,383 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     return Scaffold(
       backgroundColor: AppColors.background,
       body: isLoading
-          ? _buildLoadingScreen()
-          : Column(
-              children: [
-                _buildPremiumHeader(),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 20,
-                    ),
-                    child: Column(
-                      children: [
-                        _buildPremiumProfileCard(),
-                        const SizedBox(height: 28),
-                        _buildPremiumAddressSection(),
-                        const SizedBox(height: 28),
-                        _buildPremiumMenuCard(),
-                        const SizedBox(height: 36),
-                        _buildPremiumLogoutButton(),
-                        const SizedBox(height: 50),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-
-  Widget _buildLoadingScreen() {
-    return Container(
-      color: AppColors.background,
-      child: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(color: AppColors.primary, strokeWidth: 3),
-            SizedBox(height: 20),
-            Text(
-              "Loading Profile...",
-              style: TextStyle(
-                color: Colors.grey,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPremiumHeader() {
-    return AnimatedBuilder(
-      animation: Listenable.merge([
-        _gradientController,
-        _shimmerController,
-        _pulseController,
-      ]),
-      builder: (context, child) {
-        return Container(
-          height: 200,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppColors.primary,
-                AppColors.primary.withOpacity(0.8),
-                AppColors.primary.withOpacity(0.6),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 40,
-                offset: const Offset(0, 15),
-              ),
-            ],
-          ),
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
+          ? _buildLoader()
+          : FadeTransition(
+              opacity: _fadeAnim,
+              child: Column(
                 children: [
-                  AnimatedBuilder(
-                    animation: _pulseController,
-                    builder: (context, child) {
-                      return Transform.scale(
-                        scale: 1.0 + (_pulseController.value * 0.08),
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: AppColors.surface.withOpacity(0.25),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.3),
-                            ),
-                          ),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back_ios_new,
-                              color: Colors.white,
-                              size: 22,
-                            ),
-                            onPressed: () =>
-                                widget.onSelectView(ViewType.customerHome),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const Spacer(),
-                  AnimatedBuilder(
-                    animation: _shimmerController,
-                    builder: (context, child) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.4),
-                          borderRadius: BorderRadius.circular(25),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.white.withOpacity(0.2),
-                              blurRadius: 12,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: const Text(
-                          "My Profile",
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      );
-                    },
+                  _buildHeader(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+                      child: Column(
+                        children: [
+                          _buildProfileCard(),
+                          const SizedBox(height: 20),
+                          _buildAddressSection(),
+                          const SizedBox(height: 20),
+                          _buildQuickActions(),
+                          const SizedBox(height: 28),
+                          _buildLogoutButton(),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-        );
-      },
     );
   }
 
-  Widget _buildPremiumProfileCard() {
-    return AnimatedBuilder(
-      animation: _gradientController,
-      builder: (context, child) {
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(32),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 35,
-                offset: const Offset(0, 20),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  _buildPremiumAvatar(),
-                  const Spacer(),
-                  _buildEditButton(),
-                ],
-              ),
-              const SizedBox(height: 32),
-              _buildDetailRow("Full Name", nameController.text, Icons.person),
-              const SizedBox(height: 20),
-              _buildDetailRow(
-                "Email Address",
-                emailController.text,
-                Icons.email,
-              ),
-              const SizedBox(height: 20),
-              _buildDetailRow(
-                "Mobile Number",
-                phoneController.text,
-                Icons.phone,
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildPremiumAvatar() {
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: 1.0 + (_pulseController.value * 0.06),
-          child: Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: Colors.white, width: 4),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withOpacity(0.5),
-                  blurRadius: 30,
-                  offset: const Offset(0, 15),
-                ),
-              ],
-            ),
-            child: Center(
-              child: Text(
-                nameController.text.isNotEmpty
-                    ? nameController.text[0].toUpperCase()
-                    : "U",
-                style: const TextStyle(
-                  fontSize: 38,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildEditButton() {
-    return AnimatedBuilder(
-      animation: _shimmerController,
-      builder: (context, child) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: TextButton.icon(
-            onPressed: showEditProfileDialog,
-            icon: Icon(Icons.edit, size: 20, color: AppColors.primary),
-            label: Text(
-              "Edit Profile",
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: AppColors.primary,
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value, IconData icon) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(icon, size: 20, color: AppColors.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[700],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withOpacity(0.7),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.grey.shade100, width: 1),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 15,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Text(
-            value.isEmpty ? "Not provided" : value,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPremiumAddressSection() {
-    return _buildPremiumCard(
-      title: "📍 Delivery Addresses",
-      action: _buildAddAddressButton(),
-      children: addresses.isEmpty
-          ? [
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(48),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: Colors.grey.shade200, width: 1.5),
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.location_on_outlined,
-                      size: 72,
-                      color: Colors.grey.shade400,
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      "No addresses added yet",
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "Add your first delivery address",
-                      style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                    ),
-                  ],
-                ),
-              ),
-            ]
-          : addresses
-                .map((address) => _buildPremiumAddressTile(address))
-                .toList(),
-    );
-  }
-
-  Widget _buildAddAddressButton() {
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: 1.0 + (_pulseController.value * 0.03),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(24),
-              onTap: () async {
-                widget.onSelectView(ViewType.addressForm);
-                await Future.delayed(const Duration(milliseconds: 500));
-                fetchData();
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.4),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(Icons.add, color: Colors.white, size: 18),
-                    SizedBox(width: 6),
-                    Text(
-                      "Add New",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildPremiumAddressTile(dynamic address) {
-    final isDefault = address["is_default"] == true;
-    final lines = [
-      address["address_line_1"] ?? "",
-      address["address_line_2"] ?? "",
-      "${address["city"] ?? ""}, ${address["state"] ?? ""}",
-      address["pincode"] ?? "",
-    ].where((line) => line.isNotEmpty).join(", ");
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: isDefault
-            ? Border.all(color: AppColors.primary, width: 2.5)
-            : Border.all(color: Colors.grey.shade200, width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: isDefault
-                ? AppColors.primary.withOpacity(0.25)
-                : Colors.black.withOpacity(0.08),
-            blurRadius: 25,
-            offset: const Offset(0, 12),
+  Widget _buildLoader() {
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+          SizedBox(height: 16),
+          Text(
+            "Loading...",
+            style: TextStyle(color: AppColors.bodyText, fontSize: 14),
           ),
         ],
       ),
+    );
+  }
+
+  // ─── Header ───────────────────────────────────────────────────────────────
+  Widget _buildHeader() {
+    return Container(
+      decoration: const BoxDecoration(color: AppColors.primary),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                children: [
+                  _headerIconBtn(
+                    Icons.arrow_back_ios_new_rounded,
+                    () => widget.onSelectView(ViewType.customerHome),
+                  ),
+                  const Spacer(),
+                  const Text(
+                    "My Profile",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  const Spacer(),
+                  _headerIconBtn(Icons.edit_outlined, showEditProfileDialog),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+              child: Row(
+                children: [
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.4),
+                        width: 2,
+                      ),
+                    ),
+                    child: Center(
+                      child: Text(
+                        nameController.text.isNotEmpty
+                            ? nameController.text[0].toUpperCase()
+                            : "U",
+                        style: const TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          nameController.text.isEmpty
+                              ? "User"
+                              : nameController.text,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          emailController.text,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.75),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: const Text(
+                      "Customer",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _headerIconBtn(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+        ),
+        child: Icon(icon, color: Colors.white, size: 18),
+      ),
+    );
+  }
+
+  // ─── Profile Card ─────────────────────────────────────────────────────────
+  Widget _buildProfileCard() {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionLabel("Personal Information"),
+          const SizedBox(height: 16),
+          _infoRow(Icons.person_outline, "Full Name", nameController.text),
+          _divider(),
+          _infoRow(Icons.email_outlined, "Email Address", emailController.text),
+          _divider(),
+          _infoRow(Icons.phone_outlined, "Mobile Number", phoneController.text),
+        ],
+      ),
+    );
+  }
+
+  // ─── Address Section ──────────────────────────────────────────────────────
+  Widget _buildAddressSection() {
+    return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: isDefault ? AppColors.primary : Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(
-                  isDefault ? Icons.star : Icons.location_on,
-                  color: isDefault ? Colors.white : Colors.grey[700],
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  address["label"] ?? "Home",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              if (isDefault)
-                Container(
+              _sectionLabel("Delivery Addresses"),
+              GestureDetector(
+                onTap: () async {
+                  widget.onSelectView(ViewType.addressForm);
+                  await Future.delayed(const Duration(milliseconds: 800));
+                  fetchData();
+                },
+                child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 12,
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
                     color: AppColors.primary,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add, color: Colors.white, size: 14),
+                      SizedBox(width: 4),
+                      Text(
+                        "Add New",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (addresses.isEmpty)
+            _emptyState(
+              Icons.location_on_outlined,
+              "No addresses yet",
+              "Add your first delivery address",
+            )
+          else
+            ...addresses.map((a) => _addressTile(a)),
+        ],
+      ),
+    );
+  }
+
+  Widget _addressTile(dynamic address) {
+    // handle both bool true and int 1
+    final isDefault =
+        address["is_default"] == true || address["is_default"] == 1;
+    final hasCoords =
+        address["latitude"] != null && address["longitude"] != null;
+
+    final lines = [
+      address["address_line_1"] ?? "",
+      address["address_line_2"] ?? "",
+      "${address["city"] ?? ""}, ${address["state"] ?? ""}",
+      address["pincode"] ?? "",
+    ].where((l) => l.trim().isNotEmpty).join(", ");
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDefault
+            ? AppColors.primary.withOpacity(0.04)
+            : AppColors.background,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDefault
+              ? AppColors.primary.withOpacity(0.3)
+              : AppColors.border,
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isDefault ? Icons.star_rounded : Icons.location_on_outlined,
+                size: 16,
+                color: isDefault ? AppColors.warning : AppColors.bodyText,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  address["label"] ?? "Home",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                    color: isDefault ? AppColors.primary : AppColors.titleText,
+                  ),
+                ),
+              ),
+              if (isDefault)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
-                    "DEFAULT",
+                    "Default",
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.only(left: 10),
-            child: Text(
-              lines,
-              style: TextStyle(
-                fontSize: 15,
-                color: Colors.grey[700],
-                height: 1.5,
-              ),
+          const SizedBox(height: 8),
+          Text(
+            lines,
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.bodyText,
+              height: 1.5,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
+          // Coordinates status
+          Row(
+            children: [
+              Icon(
+                hasCoords ? Icons.my_location : Icons.location_off,
+                size: 11,
+                color: hasCoords ? AppColors.success : AppColors.error,
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  hasCoords
+                      ? "Location verified"
+                      : "No coordinates — re-save to fix",
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: hasCoords ? AppColors.success : AppColors.error,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               if (!isDefault)
-                _buildActionButton(
+                _textActionBtn(
                   "Set Default",
-                  Icons.star_border_outlined,
-                  const Color(0xFFF59E0B),
+                  Icons.star_border_rounded,
+                  AppColors.warning,
                   () async {
                     await _apiService.setDefaultAddress(address["id"]);
                     fetchData();
                   },
                 ),
-              const SizedBox(width: 12),
-              _buildActionButton(
+              if (!isDefault) const SizedBox(width: 8),
+              _textActionBtn(
                 "Remove",
-                Icons.delete_outline,
-                Colors.red,
+                Icons.delete_outline_rounded,
+                AppColors.error,
                 () async {
                   await _apiService.deleteAddress(address["id"]);
                   fetchData();
@@ -814,257 +644,316 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     );
   }
 
-  Widget _buildActionButton(
-    String text,
-    IconData icon,
-    Color color,
-    VoidCallback onPressed,
-  ) {
-    return TextButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18, color: color),
-      label: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w700,
-          fontSize: 14,
-        ),
-      ),
-    );
-  }
+  // ─── Quick Actions ────────────────────────────────────────────────────────
+  Widget _buildQuickActions() {
+    final actions = [
+      (Icons.receipt_long_outlined, "Order History", "View past orders"),
+      (Icons.card_giftcard_outlined, "Rewards", "Points & benefits"),
+      (Icons.support_agent_outlined, "Support", "Help & FAQs"),
+      (Icons.settings_outlined, "Settings", "Account preferences"),
+    ];
 
-  Widget _buildPremiumMenuCard() {
-    return _buildPremiumCard(
-      title: "⚡ Quick Actions",
-      children: [
-        _buildPremiumMenuTile(Icons.receipt_long_outlined, "Order History"),
-        _buildPremiumMenuTile(
-          Icons.card_giftcard_outlined,
-          "Rewards & Benefits",
-        ),
-        _buildPremiumMenuTile(Icons.support_agent_outlined, "Help & Support"),
-        _buildPremiumMenuTile(Icons.settings_outlined, "Account Settings"),
-      ],
-    );
-  }
-
-  Widget _buildPremiumMenuTile(IconData icon, String title) {
-    return AnimatedBuilder(
-      animation: _shimmerController,
-      builder: (context, child) {
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 15,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text("$title tapped!"),
-                    duration: const Duration(milliseconds: 800),
-                  ),
-                );
-              },
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withOpacity(0.4),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Icon(icon, color: Colors.white, size: 22),
-                    ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ),
-                    Icon(
-                      Icons.arrow_forward_ios,
-                      size: 18,
-                      color: Colors.grey[500],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildPremiumLogoutButton() {
-    return AnimatedBuilder(
-      animation: _gradientController,
-      builder: (context, child) {
-        return Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            color: AppColors.surface,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.red.withOpacity(0.25),
-                blurRadius: 30,
-                offset: const Offset(0, 15),
-              ),
-            ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(28),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(28),
-              onTap: logoutUser,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 18,
-                  horizontal: 40,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: Colors.red.shade400, width: 2),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.logout, color: Colors.red.shade600, size: 22),
-                    const SizedBox(width: 12),
-                    Text(
-                      "Sign Out",
-                      style: TextStyle(
-                        color: Colors.red.shade600,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildPremiumButton(
-    String text,
-    VoidCallback onPressed, {
-    bool isSecondary = false,
-  }) {
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: 1.0 + (_pulseController.value * 0.02),
-          child: Container(
-            height: 56,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              color: isSecondary ? Colors.grey.shade300 : AppColors.primary,
-              boxShadow: [
-                BoxShadow(
-                  color: (isSecondary ? Colors.grey : AppColors.primary)
-                      .withOpacity(isSecondary ? 0.3 : 0.4),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(20),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: onPressed,
-                child: Center(
-                  child: Text(
-                    text,
-                    style: TextStyle(
-                      color: isSecondary ? Colors.grey[800] : Colors.white,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildPremiumCard({
-    required String title,
-    Widget? action,
-    required List<Widget> children,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(28),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(32),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 40,
-            offset: const Offset(0, 20),
-          ),
-        ],
-      ),
+    return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (title.isNotEmpty)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          _sectionLabel("Quick Actions"),
+          const SizedBox(height: 16),
+          ...actions.asMap().entries.map((entry) {
+            final i = entry.key;
+            final item = entry.value;
+            return Column(
+              children: [
+                _actionTile(item.$1, item.$2, item.$3),
+                if (i < actions.length - 1) _divider(),
+              ],
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _actionTile(IconData icon, String title, String subtitle) {
+    return InkWell(
+      onTap: () {},
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: AppColors.primary, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.titleText,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.bodyText,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.bodyText,
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Logout ───────────────────────────────────────────────────────────────
+  Widget _buildLogoutButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: logoutUser,
+        icon: const Icon(Icons.logout_rounded, size: 18),
+        label: const Text(
+          "Sign Out",
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.error,
+          side: BorderSide(color: AppColors.error.withOpacity(0.5), width: 1.5),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Shared helpers ───────────────────────────────────────────────────────
+  Widget _card({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.border, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _sectionLabel(String text) {
+    return Text(
+      text,
+      style: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        color: AppColors.bodyText,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppColors.primary),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  label,
                   style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                    fontSize: 11,
+                    color: AppColors.bodyText,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
-                if (action != null) action,
+                const SizedBox(height: 3),
+                Text(
+                  value.isEmpty ? "Not provided" : value,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: value.isEmpty
+                        ? AppColors.bodyText
+                        : AppColors.titleText,
+                  ),
+                ),
               ],
             ),
-          if (title.isNotEmpty) const SizedBox(height: 24),
-          ...children,
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _divider() => Divider(
+    height: 1,
+    thickness: 1,
+    color: AppColors.border.withOpacity(0.6),
+  );
+
+  Widget _emptyState(IconData icon, String title, String subtitle) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(icon, size: 48, color: AppColors.border),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: AppColors.bodyText,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: const TextStyle(fontSize: 12, color: AppColors.bodyText),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _textActionBtn(
+    String text,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController ctrl,
+    String label,
+    IconData icon,
+  ) {
+    return TextField(
+      controller: ctrl,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: AppColors.titleText,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(fontSize: 13, color: AppColors.bodyText),
+        prefixIcon: Icon(icon, color: AppColors.primary, size: 18),
+        filled: true,
+        fillColor: AppColors.background,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 14,
+          horizontal: 16,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrimaryButton(String text, VoidCallback onTap) {
+    return SizedBox(
+      height: 48,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOutlinedButton(String text, VoidCallback onTap) {
+    return SizedBox(
+      height: 48,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.bodyText,
+          side: BorderSide(color: AppColors.border),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
       ),
     );
   }

@@ -82,7 +82,7 @@ class _RoleCardState extends State<RoleCard> {
             const SizedBox(height: 20),
             Text(
               widget.title,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
           ],
         ),
