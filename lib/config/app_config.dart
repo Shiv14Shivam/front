@@ -12,7 +12,7 @@ class AppConfig {
     if (Platform.isAndroid) {
       // Emulator
       return "http://10.0.2.2/api";
-      // Physical phone (later):
+      //return "http://192.168.137.1/api";
       // return "http://10.22.38.234:8000/api";
     }
 

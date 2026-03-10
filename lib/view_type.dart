@@ -5,11 +5,12 @@ enum ViewType {
   customerHome,
   vendorHome,
   primary,
-  requestedOrders,
+
   cutomerProfile,
   vendorProfile,
   addressForm,
   listNewProduct,
   requestOrder,
   cart,
+  vendorRequestedOrder,
 }

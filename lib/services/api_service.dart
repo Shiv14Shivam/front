@@ -770,4 +770,142 @@ Base URL : $_baseUrl
       return false;
     }
   }
+
+  // ================= GET VENDOR ORDERS =================
+  Future<Map<String, dynamic>> getVendorOrders() async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final response = await http
+          .get(
+            Uri.parse("$_baseUrl/vendor/orders"),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty)
+        return {"success": false, "message": "Empty response"};
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {"success": true, "data": data["data"] ?? data};
+      }
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to load orders",
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= ACCEPT VENDOR ORDER =================
+  Future<Map<String, dynamic>> acceptVendorOrder(int orderId) async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final response = await http
+          .post(
+            Uri.parse("$_baseUrl/vendor/orders/$orderId/accept"),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200)
+        return {"success": true, "message": data["message"]};
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to accept",
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= DECLINE VENDOR ORDER =================
+  Future<Map<String, dynamic>> declineVendorOrder(
+    int orderId, {
+    String? reason,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final response = await http
+          .post(
+            Uri.parse("$_baseUrl/vendor/orders/$orderId/decline"),
+            headers: _authHeaders(token),
+            body: jsonEncode({
+              "rejection_reason": reason ?? "No reason provided", // ✅ FIXED KEY
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200)
+        return {"success": true, "message": data["message"]};
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to decline",
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= PLACE DIRECT ORDER =================
+  Future<Map<String, dynamic>> placeDirectOrder({
+    required int listingId,
+    required int quantityBags,
+    required int deliveryAddressId,
+    String? notes,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {"success": false, "message": "Not authenticated"};
+      }
+
+      final response = await http
+          .post(
+            Uri.parse("$_baseUrl/orders/direct"),
+            headers: _authHeaders(token),
+            body: jsonEncode({
+              "listing_id": listingId,
+              "quantity_bags": quantityBags,
+              "delivery_address_id": deliveryAddressId,
+              "notes": notes ?? "",
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 201) {
+        return {"success": true, "data": data};
+      }
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to place order",
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
 }

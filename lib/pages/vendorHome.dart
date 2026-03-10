@@ -154,8 +154,9 @@ class _VendorHomePageState extends State<VendorHomePage>
                             subtitle: "23 orders waiting for approval",
                             count: "23",
                             color: AppColors.warning,
-                            onTap: () =>
-                                widget.onSelectView(ViewType.requestedOrders),
+                            onTap: () => widget.onSelectView(
+                              ViewType.vendorRequestedOrder,
+                            ),
                           ),
                           _buildActionTile(
                             icon: Icons.local_shipping_outlined,

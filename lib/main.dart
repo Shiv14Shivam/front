@@ -8,12 +8,13 @@ import 'pages/login_page.dart';
 import 'pages/customerHome.dart';
 import 'pages/signup.dart';
 import 'pages/vendorHome.dart';
-import 'pages/requested_order.dart';
+
 import 'pages/customer_profile.dart';
 import 'pages/address_form.dart';
 import 'pages/ListNewProductPage.dart';
 import 'pages/request_order_page.dart';
 import 'pages/cart_page.dart';
+import 'pages/vendor_requested_order.dart';
 
 void main() {
   runApp(const MyApp());
@@ -81,10 +82,6 @@ class _MyAppState extends State<MyApp> {
         child = PrimaryPage(onSelectView: setView);
         break;
 
-      case ViewType.requestedOrders:
-        child = const RequestedOrdersPage();
-        break;
-
       case ViewType.cutomerProfile:
         child = CustomerProfilePage(onSelectView: setView);
         break;
@@ -122,6 +119,10 @@ class _MyAppState extends State<MyApp> {
       // ✅ Only this case changed — reads cartItems from pendingOrderData
       case ViewType.cart:
         child = CartPage(onSelectView: setView);
+        break;
+
+      case ViewType.vendorRequestedOrder:
+        child = VendorRequestedOrder(onSelectView: setView);
         break;
     }
 
