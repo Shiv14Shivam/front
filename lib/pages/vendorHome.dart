@@ -172,7 +172,9 @@ class _VendorHomePageState extends State<VendorHomePage>
                             subtitle: "View and manage stock levels",
                             count: "8",
                             color: AppColors.primary,
-                            onTap: () {},
+                            onTap: () {
+                              widget.onSelectView(ViewType.vendorInventory);
+                            },
                           ),
                           _buildActionTile(
                             icon: Icons.analytics_outlined,

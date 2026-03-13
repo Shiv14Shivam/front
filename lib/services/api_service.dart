@@ -598,9 +598,6 @@ Base URL : $_baseUrl
   }
 
   // ================= GET CART =================
-  // Called by:
-  //   CartPage._loadCart()        → loads all cart items on page open
-  //   CustomerHomePage._loadCartCount() → gets total_items for badge count
   Future<Map<String, dynamic>> getCart() async {
     try {
       final token = await getToken();
@@ -621,8 +618,8 @@ Base URL : $_baseUrl
       if (response.statusCode == 200) {
         return {
           "success": true,
-          "data": data["data"], // list of CartItemResource
-          "summary": data["summary"], // {total_items, subtotal}
+          "data": data["data"],
+          "summary": data["summary"],
         };
       }
 
@@ -638,12 +635,6 @@ Base URL : $_baseUrl
   }
 
   // ================= ADD TO CART =================
-  // Sends listing_id + quantity_bags to POST /api/cart.
-  // Backend uses updateOrCreate — same listing won't be duplicated.
-  // Returns 201 if new item, 200 if quantity was updated.
-  //
-  // Called by: CustomerHomePage._addToCart()
-  // The quantity_bags saved here is the SAME value CartPage reads back.
   Future<Map<String, dynamic>> addToCart({
     required int listingId,
     required int quantityBags,
@@ -691,9 +682,6 @@ Base URL : $_baseUrl
   }
 
   // ================= UPDATE CART ITEM =================
-  // Updates quantity_bags for an existing cart item.
-  // Called by CartPage when user taps + or - on a cart item.
-  // Uses optimistic UI — Flutter updates first, rolls back on failure.
   Future<Map<String, dynamic>> updateCartItem(int id, int quantityBags) async {
     try {
       final token = await getToken();
@@ -728,9 +716,6 @@ Base URL : $_baseUrl
   }
 
   // ================= REMOVE CART ITEM =================
-  // Removes a single item from cart by cart item ID.
-  // Called by CartPage when user taps delete on an item.
-  // Uses optimistic UI — Flutter removes first, rolls back on failure.
   Future<bool> removeCartItem(int id) async {
     try {
       final token = await getToken();
@@ -749,8 +734,6 @@ Base URL : $_baseUrl
   }
 
   // ================= CLEAR CART =================
-  // Removes ALL items from the cart in one call.
-  // Called by CartPage when user confirms "Clear All" in the dialog.
   Future<bool> clearCart() async {
     try {
       final token = await getToken();
@@ -847,7 +830,7 @@ Base URL : $_baseUrl
             Uri.parse("$_baseUrl/vendor/orders/$orderId/decline"),
             headers: _authHeaders(token),
             body: jsonEncode({
-              "rejection_reason": reason ?? "No reason provided", // ✅ FIXED KEY
+              "rejection_reason": reason ?? "No reason provided",
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -901,6 +884,135 @@ Base URL : $_baseUrl
       return {
         "success": false,
         "message": data["message"] ?? "Failed to place order",
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= GET VENDOR INVENTORY =================
+  // GET /api/vendor/inventory?status=active|inactive|pending|rejected
+  Future<Map<String, dynamic>> getVendorInventory({String? status}) async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final uri = Uri.parse(
+        '$_baseUrl/vendor/inventory',
+      ).replace(queryParameters: status != null ? {'status': status} : null);
+
+      final response = await http
+          .get(uri, headers: _authHeaders(token))
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty)
+        return {"success": false, "message": "Empty response"};
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) {
+        return {
+          "success": true,
+          "data": data["data"],
+          "meta": data["meta"],
+          "stock_summary": data["stock_summary"],
+        };
+      }
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed",
+        "statusCode": response.statusCode,
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= RESTOCK LISTING =================
+  // PATCH /api/vendor/inventory/{id}/restock
+  // Body: { "add_bags": int }
+  Future<Map<String, dynamic>> restockListing(
+    int listingId,
+    int addBags,
+  ) async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final response = await http
+          .patch(
+            Uri.parse('$_baseUrl/vendor/inventory/$listingId/restock'),
+            headers: _authHeaders(token),
+            body: jsonEncode({"add_bags": addBags}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty)
+        return {"success": false, "message": "Empty response"};
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) {
+        return {
+          "success": true,
+          "message": data["message"],
+          "new_stock_bags": data["new_stock_bags"],
+        };
+      }
+      return {"success": false, "message": data["message"] ?? "Restock failed"};
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= UPDATE LISTING PRICES =================
+  // PATCH /api/vendor/inventory/{id}/prices
+  // Body: { "price_per_bag": double, "delivery_charge_per_ton": double }
+  Future<Map<String, dynamic>> updateListingPrices(
+    int listingId, {
+    required double pricePerBag,
+    required double deliveryChargePerTon,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final response = await http
+          .patch(
+            Uri.parse('$_baseUrl/vendor/inventory/$listingId/prices'),
+            headers: _authHeaders(token),
+            body: jsonEncode({
+              "price_per_bag": pricePerBag,
+              "delivery_charge_per_ton": deliveryChargePerTon,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty)
+        return {"success": false, "message": "Empty response"};
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (response.statusCode == 200) {
+        return {
+          "success": true,
+          "message": data["message"],
+          "price_per_bag": data["price_per_bag"],
+          "delivery_charge_per_ton": data["delivery_charge_per_ton"],
+        };
+      }
+      return {
+        "success": false,
+        "message": data["message"] ?? "Price update failed",
       };
     } on TimeoutException {
       return {"success": false, "message": "Server timeout"};

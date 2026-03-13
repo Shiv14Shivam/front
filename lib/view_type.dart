@@ -13,4 +13,5 @@ enum ViewType {
   requestOrder,
   cart,
   vendorRequestedOrder,
+  vendorInventory,
 }

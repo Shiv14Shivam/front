@@ -15,6 +15,7 @@ import 'pages/ListNewProductPage.dart';
 import 'pages/request_order_page.dart';
 import 'pages/cart_page.dart';
 import 'pages/vendor_requested_order.dart';
+import 'pages/vendor_inventory.dart';
 
 void main() {
   runApp(const MyApp());
@@ -123,6 +124,9 @@ class _MyAppState extends State<MyApp> {
 
       case ViewType.vendorRequestedOrder:
         child = VendorRequestedOrder(onSelectView: setView);
+        break;
+      case ViewType.vendorInventory:
+        child = VendorInventoryPage(onSelectView: setView);
         break;
     }
 
