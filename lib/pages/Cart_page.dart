@@ -1,8 +1,11 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:front/utils/responsive.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../view_type.dart';
+import '../widgets/web_scaffold.dart'; 
 
 class CartPage extends StatefulWidget {
   final void Function(
@@ -20,19 +23,15 @@ class CartPage extends StatefulWidget {
 
 class _CartPageState extends State<CartPage>
     with SingleTickerProviderStateMixin {
-  // ── Animation ────────────────────────────────────────────────
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
-  // ── Services & State ─────────────────────────────────────────
   final ApiService _api = ApiService();
   List<Map<String, dynamic>> _cartItems = [];
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
 
-  // ── Customer coordinates (from default address) ──────────────
-  // Used for Haversine distance calculation against vendor warehouse
   double? _customerLat;
   double? _customerLng;
 
@@ -57,13 +56,6 @@ class _CartPageState extends State<CartPage>
     super.dispose();
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // LOAD CART
-  // Fetches cart items + customer default address in parallel.
-  // Customer lat/lng is used to calculate distance to each vendor.
-  // Vendor lat/lng comes from listing.seller.warehouse_lat/lng
-  // which is populated from vendor's default address in CartItemResource.
-  // ═══════════════════════════════════════════════════════════════
   Future<void> _loadCart() async {
     setState(() {
       _isLoading = true;
@@ -71,7 +63,6 @@ class _CartPageState extends State<CartPage>
     });
 
     try {
-      // Fetch both simultaneously for better performance
       final results = await Future.wait([
         _api.getCart(),
         _api.getDefaultAddress(),
@@ -80,8 +71,6 @@ class _CartPageState extends State<CartPage>
       final cartResult = results[0];
       final addressResult = results[1];
 
-      // Extract customer coordinates from their default address
-      // These are set when user saves/updates their address via Nominatim geocoding
       if (addressResult["success"] == true) {
         final addr = addressResult["data"];
         _customerLat = double.tryParse(addr["latitude"]?.toString() ?? '');
@@ -97,8 +86,6 @@ class _CartPageState extends State<CartPage>
             final product = listing?["product"];
             final seller = listing?["seller"];
 
-            // Vendor warehouse coordinates — populated from vendor's
-            // default address in CartItemResource → seller.addresses
             final vendorLat = double.tryParse(
               seller?["warehouse_lat"]?.toString() ?? '',
             );
@@ -106,8 +93,6 @@ class _CartPageState extends State<CartPage>
               seller?["warehouse_lng"]?.toString() ?? '',
             );
 
-            // Auto-calculate real distance using Haversine formula
-            // Falls back to 5.0 km if either party has no coordinates
             final distance =
                 (_customerLat != null &&
                     _customerLng != null &&
@@ -122,23 +107,15 @@ class _CartPageState extends State<CartPage>
                 : 5.0;
 
             return {
-              // Cart item ID — used for update/delete API calls
               "id": item["id"],
               "listing_id": item["listing_id"],
-
-              // quantity_bags is saved in DB when user adds to cart
-              // from CustomerHomePage → api.addToCart(listingId, quantityBags)
               "quantity":
                   double.tryParse(item["quantity_bags"]?.toString() ?? "1") ??
                   1.0,
-
-              // Product display info
               "name": product?["name"] ?? "Product",
               "seller": seller?["name"] ?? "Seller",
               "unit": product?["unit"] ?? "per bag",
               "image_url": product?["image_url"],
-
-              // Pricing
               "price":
                   double.tryParse(
                     listing?["price_per_bag"]?.toString() ?? "0",
@@ -149,15 +126,8 @@ class _CartPageState extends State<CartPage>
                     listing?["delivery_charge_per_ton"]?.toString() ?? "0",
                   ) ??
                   0.0,
-
-              // Stock limit — used to cap quantity stepper in UI
               "stock": listing?["available_stock_bags"] ?? 0,
-
-              // Whether current quantity is still fulfillable
-              // Backend calculates this live in CartItemResource
               "in_stock": item["in_stock"] ?? true,
-
-              // Auto-calculated distance in km (Haversine)
               "distance": distance,
             };
           }).toList();
@@ -180,18 +150,13 @@ class _CartPageState extends State<CartPage>
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // HAVERSINE DISTANCE FORMULA
-  // Calculates straight-line distance in km between two coordinates.
-  // Used to estimate delivery distance between customer and vendor.
-  // ═══════════════════════════════════════════════════════════════
   double _calculateDistance(
     double lat1,
     double lng1,
     double lat2,
     double lng2,
   ) {
-    const R = 6371.0; // Earth radius in km
+    const R = 6371.0;
     final dLat = _toRad(lat2 - lat1);
     final dLng = _toRad(lng2 - lng1);
     final a =
@@ -203,12 +168,6 @@ class _CartPageState extends State<CartPage>
 
   double _toRad(double deg) => deg * (pi / 180);
 
-  // ═══════════════════════════════════════════════════════════════
-  // COMPUTED TOTALS
-  // Subtotal  = sum of (price × quantity) for all items
-  // Delivery  = sum of (deliveryCharge × distance) for all items
-  // Grand     = subtotal + delivery
-  // ═══════════════════════════════════════════════════════════════
   double get _subtotal => _cartItems.fold(
     0,
     (sum, item) =>
@@ -223,24 +182,16 @@ class _CartPageState extends State<CartPage>
 
   double get _grandTotal => _subtotal + _deliveryTotal;
 
-  // ═══════════════════════════════════════════════════════════════
-  // REMOVE ITEM
-  // Uses optimistic UI — removes from screen immediately,
-  // rolls back if API call fails.
-  // Calls DELETE /api/cart/{id}
-  // ═══════════════════════════════════════════════════════════════
   Future<void> _removeItem(int index) async {
     final id = _cartItems[index]["id"] as int;
     final name = _cartItems[index]["name"] as String;
-    final removed = _cartItems[index]; // save for rollback
+    final removed = _cartItems[index];
 
-    // Optimistic: remove from UI immediately
     setState(() => _cartItems.removeAt(index));
 
     final success = await _api.removeCartItem(id);
 
     if (!success) {
-      // Rollback if API failed
       setState(() => _cartItems.insert(index, removed));
       _showSnack("Failed to remove item", isSuccess: false);
     } else {
@@ -248,15 +199,7 @@ class _CartPageState extends State<CartPage>
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // UPDATE QUANTITY
-  // Validates against stock limit before calling API.
-  // Uses optimistic UI — updates immediately, rolls back on failure.
-  // Removes item if quantity reaches 0.
-  // Calls PUT /api/cart/{id} with new quantity_bags
-  // ═══════════════════════════════════════════════════════════════
   Future<void> _updateQuantity(int index, double newQty) async {
-    // Remove item if quantity drops to 0
     if (newQty <= 0) {
       _removeItem(index);
       return;
@@ -266,29 +209,21 @@ class _CartPageState extends State<CartPage>
     final oldQty = _cartItems[index]["quantity"] as double;
     final maxStock = _cartItems[index]["stock"] as int;
 
-    // Cap at available stock
     if (newQty > maxStock) {
       _showSnack("Only $maxStock bags available", isSuccess: false);
       return;
     }
 
-    // Optimistic: update UI immediately
     setState(() => _cartItems[index]["quantity"] = newQty);
 
-    // Sync with backend
     final result = await _api.updateCartItem(id, newQty.toInt());
 
     if (result["success"] != true) {
-      // Rollback on failure
       setState(() => _cartItems[index]["quantity"] = oldQty);
       _showSnack(result["message"] ?? "Update failed", isSuccess: false);
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // CLEAR CART
-  // Calls DELETE /api/cart/clear — removes all items for this user.
-  // ═══════════════════════════════════════════════════════════════
   Future<void> _clearCart() async {
     final success = await _api.clearCart();
     if (success) {
@@ -298,14 +233,11 @@ class _CartPageState extends State<CartPage>
     }
   }
 
-  // ── Checkout ─────────────────────────────────────────────────
   void _checkout() {
     if (_cartItems.isEmpty) {
       _showSnack("Your cart is empty", isSuccess: false);
       return;
     }
-    // TODO: Navigate to order confirmation page
-    // widget.onSelectView(ViewType.checkout, orderData: {...})
     _showSnack(
       "Proceeding to checkout...",
       isSuccess: true,
@@ -313,7 +245,6 @@ class _CartPageState extends State<CartPage>
     );
   }
 
-  // ── Snackbar helper ──────────────────────────────────────────
   void _showSnack(
     String msg, {
     required bool isSuccess,
@@ -344,23 +275,30 @@ class _CartPageState extends State<CartPage>
 
   // ═══════════════════════════════════════════════════════════════
   // BUILD
+  // ✅ Only this method changed — WebScaffold wraps original Scaffold
   // ═══════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(child: _buildBody()),
-          ],
+    final bool isDesktop = kIsWeb && !Responsive.isMobile(context);
+    return WebScaffold(
+      isVendor: false,
+      onSelectView: widget.onSelectView,
+      selectedIndex: 1, // Cart is index 1 in customer sidebar
+      body: Scaffold(
+        backgroundColor: AppColors.background,
+        body: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Column(
+            children: [
+              if (!isDesktop) _buildHeader(),
+              Expanded(child: _buildBody()),
+            ],
+          ),
         ),
+        bottomSheet: (!_isLoading && !_hasError && _cartItems.isNotEmpty)
+            ? _buildCheckoutBar()
+            : null,
       ),
-      bottomSheet: (!_isLoading && !_hasError && _cartItems.isNotEmpty)
-          ? _buildCheckoutBar()
-          : null,
     );
   }
 
@@ -379,17 +317,12 @@ class _CartPageState extends State<CartPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Warn user if no default address — distance will be estimated
             if (_customerLat == null) _buildNoAddressBanner(),
-
             _buildCountBadge(),
             const SizedBox(height: 16),
-
-            // Render each cart item card
             ..._cartItems.asMap().entries.map(
               (e) => _cartItemCard(e.key, e.value),
             ),
-
             const SizedBox(height: 20),
             _buildSummaryCard(),
           ],
@@ -729,7 +662,6 @@ class _CartPageState extends State<CartPage>
     final stock = item["stock"] as int;
     final inStock = item["in_stock"] as bool;
 
-    // Item total = (price × qty) + (delivery charge × distance)
     final itemTotal = price * qty + charge * dist;
 
     return Container(
@@ -738,7 +670,6 @@ class _CartPageState extends State<CartPage>
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          // Red border if stock is insufficient for this quantity
           color: inStock ? AppColors.border : AppColors.error.withOpacity(0.4),
           width: 1,
         ),
@@ -753,7 +684,6 @@ class _CartPageState extends State<CartPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Top row: image, name, seller, price, delete ──
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
             child: Row(
@@ -797,7 +727,6 @@ class _CartPageState extends State<CartPage>
                           ),
                         ],
                       ),
-                      // Out of stock warning chip
                       if (!inStock) ...[
                         const SizedBox(height: 4),
                         _chip(
@@ -809,7 +738,6 @@ class _CartPageState extends State<CartPage>
                     ],
                   ),
                 ),
-                // Delete button — calls DELETE /api/cart/{id}
                 GestureDetector(
                   onTap: () => _removeItem(index),
                   child: Container(
@@ -831,15 +759,10 @@ class _CartPageState extends State<CartPage>
 
           Divider(height: 1, color: AppColors.border.withOpacity(0.6)),
 
-          // ── Quantity stepper + Distance display ──
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: Row(
               children: [
-                // Quantity stepper
-                // +/- calls PUT /api/cart/{id} with updated quantity_bags
-                // This quantity is the SAME as what was set in CustomerHomePage
-                // Both read/write to Cart.quantity_bags in the database
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -874,7 +797,6 @@ class _CartPageState extends State<CartPage>
                         ),
                         child: Row(
                           children: [
-                            // Decrease
                             GestureDetector(
                               onTap: () => _updateQuantity(index, qty - 1),
                               child: Container(
@@ -893,7 +815,6 @@ class _CartPageState extends State<CartPage>
                                 ),
                               ),
                             ),
-                            // Current quantity value
                             Expanded(
                               child: Text(
                                 qty % 1 == 0
@@ -907,7 +828,6 @@ class _CartPageState extends State<CartPage>
                                 ),
                               ),
                             ),
-                            // Increase
                             GestureDetector(
                               onTap: () => _updateQuantity(index, qty + 1),
                               child: Container(
@@ -935,10 +855,6 @@ class _CartPageState extends State<CartPage>
 
                 const SizedBox(width: 12),
 
-                // Distance display — READ ONLY
-                // Auto-calculated via Haversine using:
-                //   customer lat/lng (from their default address)
-                //   vendor lat/lng (from vendor's default address via CartItemResource)
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -964,7 +880,6 @@ class _CartPageState extends State<CartPage>
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
-                              // Green pin if real coords, orange if estimated
                               _customerLat != null
                                   ? Icons.location_on_rounded
                                   : Icons.location_off_outlined,
@@ -1003,7 +918,6 @@ class _CartPageState extends State<CartPage>
             ),
           ),
 
-          // ── Item total footer ──
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1040,7 +954,6 @@ class _CartPageState extends State<CartPage>
     );
   }
 
-  // ── Product image with fallback ──────────────────────────────
   Widget _productAvatar(String? imageUrl) {
     if (imageUrl != null && imageUrl.isNotEmpty) {
       return ClipRRect(
@@ -1070,7 +983,6 @@ class _CartPageState extends State<CartPage>
     );
   }
 
-  // ── Order summary card ───────────────────────────────────────
   Widget _buildSummaryCard() {
     return Container(
       width: double.infinity,
@@ -1106,8 +1018,6 @@ class _CartPageState extends State<CartPage>
             "Delivery charges",
             "₹${_deliveryTotal.toStringAsFixed(2)}",
           ),
-
-          // Disclaimer if delivery distance is estimated
           if (_customerLat == null) ...[
             const SizedBox(height: 6),
             Row(
@@ -1130,7 +1040,6 @@ class _CartPageState extends State<CartPage>
               ],
             ),
           ],
-
           const SizedBox(height: 14),
           Divider(height: 1, color: AppColors.border.withOpacity(0.7)),
           const SizedBox(height: 14),
@@ -1261,7 +1170,6 @@ class _CartPageState extends State<CartPage>
     );
   }
 
-  // ── Chip helper ──────────────────────────────────────────────
   Widget _chip(String label, Color bg, Color fg) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

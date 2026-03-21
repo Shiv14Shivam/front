@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:front/services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../view_type.dart';
+import '../widgets/web_scaffold.dart';
 
 class CustomerProfilePage extends StatefulWidget {
   final Function(ViewType) onSelectView;
@@ -57,7 +58,6 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
         phoneController.text = user["phone"] ?? "";
       }
 
-      // getAddresses() always returns normalized List inside "data"
       if (addressRes["success"]) {
         setState(() {
           addresses = List<dynamic>.from(addressRes["data"] ?? []);
@@ -115,6 +115,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Dialog header
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
@@ -250,36 +251,44 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: isLoading
-          ? _buildLoader()
-          : FadeTransition(
-              opacity: _fadeAnim,
-              child: Column(
-                children: [
-                  _buildHeader(),
-                  Expanded(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-                      child: Column(
-                        children: [
-                          _buildProfileCard(),
-                          const SizedBox(height: 20),
-                          _buildAddressSection(),
-                          const SizedBox(height: 20),
-                          _buildQuickActions(),
-                          const SizedBox(height: 28),
-                          _buildLogoutButton(),
-                        ],
+    return WebScaffold(
+      isVendor: false,
+      onSelectView: widget.onSelectView,
+      selectedIndex: 3,
+      body: Scaffold(
+        backgroundColor: AppColors.background,
+        body: isLoading
+            ? _buildLoader()
+            : FadeTransition(
+                opacity: _fadeAnim,
+                child: Column(
+                  children: [
+                    _buildHeader(),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+                        child: Column(
+                          children: [
+                            _buildProfileCard(),
+                            const SizedBox(height: 20),
+                            _buildAddressSection(),
+                            const SizedBox(height: 20),
+                            _buildQuickActions(),
+                            const SizedBox(height: 28),
+                            _buildLogoutButton(),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 
@@ -299,7 +308,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     );
   }
 
-  // ─── Header ───────────────────────────────────────────────────────────────
+  // ── Header ─────────────────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
       decoration: const BoxDecoration(color: AppColors.primary),
@@ -393,10 +402,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.3),
-                        width: 1,
-                      ),
+                      border: Border.all(color: Colors.white.withOpacity(0.3)),
                     ),
                     child: const Text(
                       "Customer",
@@ -425,20 +431,53 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.15),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+          border: Border.all(color: Colors.white.withOpacity(0.2)),
         ),
         child: Icon(icon, color: Colors.white, size: 18),
       ),
     );
   }
 
-  // ─── Profile Card ─────────────────────────────────────────────────────────
+  // ── Profile Card ───────────────────────────────────────────────────────────
   Widget _buildProfileCard() {
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionLabel("Personal Information"),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _sectionLabel("Personal Information"),
+              GestureDetector(
+                onTap: showEditProfileDialog,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit_outlined, color: Colors.white, size: 13),
+                      SizedBox(width: 5),
+                      Text(
+                        "Edit",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           _infoRow(Icons.person_outline, "Full Name", nameController.text),
           _divider(),
@@ -450,7 +489,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     );
   }
 
-  // ─── Address Section ──────────────────────────────────────────────────────
+  // ── Address Section ────────────────────────────────────────────────────────
   Widget _buildAddressSection() {
     return _card(
       child: Column(
@@ -509,7 +548,6 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
   }
 
   Widget _addressTile(dynamic address) {
-    // handle both bool true and int 1
     final isDefault =
         address["is_default"] == true || address["is_default"] == 1;
     final hasCoords =
@@ -589,7 +627,6 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
             ),
           ),
           const SizedBox(height: 6),
-          // Coordinates status
           Row(
             children: [
               Icon(
@@ -644,7 +681,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     );
   }
 
-  // ─── Quick Actions ────────────────────────────────────────────────────────
+  // ── Quick Actions ──────────────────────────────────────────────────────────
   Widget _buildQuickActions() {
     final actions = [
       (Icons.receipt_long_outlined, "Order History", "View past orders"),
@@ -726,7 +763,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     );
   }
 
-  // ─── Logout ───────────────────────────────────────────────────────────────
+  // ── Logout ─────────────────────────────────────────────────────────────────
   Widget _buildLogoutButton() {
     return SizedBox(
       width: double.infinity,
@@ -749,7 +786,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
     );
   }
 
-  // ─── Shared helpers ───────────────────────────────────────────────────────
+  // ── Shared helpers ─────────────────────────────────────────────────────────
   Widget _card({required Widget child}) {
     return Container(
       width: double.infinity,
@@ -757,7 +794,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border, width: 1),
+        border: Border.all(color: AppColors.border),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),

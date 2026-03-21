@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../view_type.dart';
 import '../../theme/app_colors.dart';
+import '../widgets/web_layout.dart';
 
 // Intro screen with logo animation
 class PrimaryPage extends StatefulWidget {
@@ -77,70 +78,72 @@ class _PrimaryPageState extends State<PrimaryPage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background, // matches landing page
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Logo with scale + fade animation
-            FadeTransition(
-              opacity: _fadeAnimation,
-              child: ScaleTransition(
-                scale: _scaleAnimation,
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(32),
-                    border: Border.all(color: AppColors.border, width: 1.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.12),
-                        blurRadius: 24,
-                        spreadRadius: 2,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: SvgPicture.asset(
-                    "assets/log.svg",
-                    width: 120,
-                    height: 120,
+    return WebLayout(
+      child: Scaffold(
+        backgroundColor: AppColors.background, // matches landing page
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Logo with scale + fade animation
+              FadeTransition(
+                opacity: _fadeAnimation,
+                child: ScaleTransition(
+                  scale: _scaleAnimation,
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(32),
+                      border: Border.all(color: AppColors.border, width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withOpacity(0.12),
+                          blurRadius: 24,
+                          spreadRadius: 2,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: SvgPicture.asset(
+                      "assets/log.svg",
+                      width: 120,
+                      height: 120,
+                    ),
                   ),
                 ),
               ),
-            ),
 
-            const SizedBox(height: 28),
+              const SizedBox(height: 28),
 
-            // App name + tagline fade in after logo
-            FadeTransition(
-              opacity: _taglineFadeAnimation,
-              child: Column(
-                children: [
-                  Text(
-                    "Sand Here",
-                    style: TextStyle(
-                      fontSize: 30,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.titleText,
-                      letterSpacing: 0.5,
+              // App name + tagline fade in after logo
+              FadeTransition(
+                opacity: _taglineFadeAnimation,
+                child: Column(
+                  children: [
+                    Text(
+                      "Sand Here",
+                      style: TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.titleText,
+                        letterSpacing: 0.5,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    "Delivered to your doorstep",
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: AppColors.bodyText,
-                      letterSpacing: 0.2,
+                    const SizedBox(height: 6),
+                    Text(
+                      "Delivered to your doorstep",
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: AppColors.bodyText,
+                        letterSpacing: 0.2,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

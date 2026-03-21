@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../view_type.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/web_scaffold.dart';
 
 class VendorProfilePage extends StatefulWidget {
   final Function(ViewType) onSelectView;
@@ -19,7 +20,6 @@ class _VendorProfilePageState extends State<VendorProfilePage>
   Map<String, dynamic>? vendor;
   List<dynamic> addresses = [];
   bool isLoading = true;
-  bool isEditing = false;
 
   final nameController = TextEditingController();
   final phoneController = TextEditingController();
@@ -88,24 +88,176 @@ class _VendorProfilePageState extends State<VendorProfilePage>
     }
   }
 
-  Future<void> _saveProfile() async {
-    final res = await _apiService.updateProfile(
-      nameController.text,
-      emailController.text,
-      phoneController.text,
-      firmName: firmController.text,
-      businessType: businessTypeController.text,
-      gstNumber: gstController.text,
+  // ── Edit dialog (same pattern as CustomerProfilePage) ─────────────────────
+  void _showEditDialog() {
+    final nameEdit = TextEditingController(text: nameController.text);
+    final emailEdit = TextEditingController(text: emailController.text);
+    final phoneEdit = TextEditingController(text: phoneController.text);
+    final firmEdit = TextEditingController(text: firmController.text);
+    final businessEdit = TextEditingController(
+      text: businessTypeController.text,
     );
-    if (res["success"]) {
-      _showSnack("Profile updated successfully", isSuccess: true);
-      await _loadVendorData();
-    } else {
-      _showSnack(res["message"] ?? "Update failed", isSuccess: false);
-    }
+    final gstEdit = TextEditingController(text: gstController.text);
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 40,
+                offset: const Offset(0, 20),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Dialog header
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 20,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.vendor,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.edit_outlined,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      "Edit Business Profile",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const Spacer(),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: const Icon(
+                        Icons.close,
+                        color: Colors.white70,
+                        size: 22,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Scrollable fields
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    children: [
+                      _buildTextField(
+                        firmEdit,
+                        "Firm Name",
+                        Icons.business_outlined,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        nameEdit,
+                        "Owner Name",
+                        Icons.person_outline,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        emailEdit,
+                        "Email Address",
+                        Icons.email_outlined,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        phoneEdit,
+                        "Phone Number",
+                        Icons.phone_outlined,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        gstEdit,
+                        "GST Number",
+                        Icons.receipt_outlined,
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTextField(
+                        businessEdit,
+                        "Business Type",
+                        Icons.category_outlined,
+                      ),
+                      const SizedBox(height: 28),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildOutlinedButton(
+                              "Cancel",
+                              () => Navigator.pop(context),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildPrimaryButton("Save", () async {
+                              Navigator.pop(context);
+                              final res = await _apiService.updateProfile(
+                                nameEdit.text.trim(),
+                                emailEdit.text.trim(),
+                                phoneEdit.text.trim(),
+                                firmName: firmEdit.text.trim(),
+                                businessType: businessEdit.text.trim(),
+                                gstNumber: gstEdit.text.trim(),
+                              );
+                              if (res["success"] && mounted) {
+                                _showSnack(
+                                  "Profile updated successfully",
+                                  isSuccess: true,
+                                );
+                                await _loadVendorData();
+                              } else if (mounted) {
+                                _showSnack(
+                                  res["message"] ?? "Update failed",
+                                  isSuccess: false,
+                                );
+                              }
+                            }),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).then((_) {
+      nameEdit.dispose();
+      emailEdit.dispose();
+      phoneEdit.dispose();
+      firmEdit.dispose();
+      businessEdit.dispose();
+      gstEdit.dispose();
+    });
   }
 
   void _showSnack(String msg, {required bool isSuccess}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -127,60 +279,73 @@ class _VendorProfilePageState extends State<VendorProfilePage>
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        backgroundColor: AppColors.background,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(
-                color: AppColors.vendor,
-                strokeWidth: 2.5,
-              ),
-              SizedBox(height: 16),
-              Text(
-                "Loading...",
-                style: TextStyle(color: AppColors.bodyText, fontSize: 14),
-              ),
-            ],
+      return WebScaffold(
+        isVendor: true,
+        onSelectView: widget.onSelectView,
+        selectedIndex: 5,
+        body: const Scaffold(
+          backgroundColor: AppColors.background,
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(
+                  color: AppColors.vendor,
+                  strokeWidth: 2.5,
+                ),
+                SizedBox(height: 16),
+                Text(
+                  "Loading...",
+                  style: TextStyle(color: AppColors.bodyText, fontSize: 14),
+                ),
+              ],
+            ),
           ),
         ),
       );
     }
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: FadeTransition(
-        opacity: _fadeAnim,
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-                child: Column(
-                  children: [
-                    _buildStatsRow(),
-                    const SizedBox(height: 20),
-                    _buildBusinessInfoCard(),
-                    const SizedBox(height: 20),
-                    _buildLocationsCard(),
-                    const SizedBox(height: 28),
-                    _buildLogoutButton(),
-                  ],
+    return WebScaffold(
+      isVendor: true,
+      onSelectView: widget.onSelectView,
+      selectedIndex: 5,
+      body: Scaffold(
+        backgroundColor: AppColors.background,
+        body: FadeTransition(
+          opacity: _fadeAnim,
+          child: Column(
+            children: [
+              _buildHeader(),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+                  child: Column(
+                    children: [
+                      _buildStatsRow(),
+                      const SizedBox(height: 20),
+                      _buildBusinessInfoCard(),
+                      const SizedBox(height: 20),
+                      _buildLocationsCard(),
+                      const SizedBox(height: 28),
+                      _buildLogoutButton(),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ─── Header ───────────────────────────────────────────────────────────────
+  // ── Header ─────────────────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
       color: AppColors.vendor,
@@ -188,7 +353,6 @@ class _VendorProfilePageState extends State<VendorProfilePage>
         bottom: false,
         child: Column(
           children: [
-            // Top nav
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Row(
@@ -208,18 +372,12 @@ class _VendorProfilePageState extends State<VendorProfilePage>
                     ),
                   ),
                   const Spacer(),
-                  _headerIconBtn(
-                    isEditing ? Icons.check_rounded : Icons.edit_outlined,
-                    () async {
-                      if (isEditing) await _saveProfile();
-                      setState(() => isEditing = !isEditing);
-                    },
-                  ),
+                  // ✅ Always shows edit icon; opens dialog on tap
+                  _headerIconBtn(Icons.edit_outlined, _showEditDialog),
                 ],
               ),
             ),
             const SizedBox(height: 24),
-            // Firm info row
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
               child: Row(
@@ -280,7 +438,6 @@ class _VendorProfilePageState extends State<VendorProfilePage>
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
                           color: Colors.white.withOpacity(0.3),
-                          width: 1,
                         ),
                       ),
                       child: Text(
@@ -310,14 +467,14 @@ class _VendorProfilePageState extends State<VendorProfilePage>
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.15),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+          border: Border.all(color: Colors.white.withOpacity(0.2)),
         ),
         child: Icon(icon, color: Colors.white, size: 18),
       ),
     );
   }
 
-  // ─── Stats Row ────────────────────────────────────────────────────────────
+  // ── Stats Row ──────────────────────────────────────────────────────────────
   Widget _buildStatsRow() {
     return Row(
       children: [
@@ -337,7 +494,7 @@ class _VendorProfilePageState extends State<VendorProfilePage>
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border, width: 1),
+          border: Border.all(color: AppColors.border),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.04),
@@ -373,124 +530,68 @@ class _VendorProfilePageState extends State<VendorProfilePage>
     );
   }
 
-  // ─── Business Info ────────────────────────────────────────────────────────
+  // ── Business Info Card (read-only now — edit via dialog) ───────────────────
   Widget _buildBusinessInfoCard() {
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionLabel("Business Information"),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _sectionLabel("Business Information"),
+              GestureDetector(
+                onTap: _showEditDialog,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.vendor,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.edit_outlined, color: Colors.white, size: 13),
+                      SizedBox(width: 5),
+                      Text(
+                        "Edit",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
-          _infoOrEditRow(
-            Icons.business_outlined,
-            "Business Name",
-            firmController,
-          ),
+          _infoRow(Icons.business_outlined, "Firm Name", firmController.text),
           _divider(),
-          _infoOrEditRow(Icons.person_outline, "Owner Name", nameController),
+          _infoRow(Icons.person_outline, "Owner Name", nameController.text),
           _divider(),
-          _infoOrEditRow(
-            Icons.email_outlined,
-            "Email Address",
-            emailController,
-          ),
+          _infoRow(Icons.email_outlined, "Email Address", emailController.text),
           _divider(),
-          _infoOrEditRow(Icons.phone_outlined, "Phone Number", phoneController),
+          _infoRow(Icons.phone_outlined, "Phone Number", phoneController.text),
           _divider(),
-          _infoOrEditRow(Icons.receipt_outlined, "GST Number", gstController),
+          _infoRow(Icons.receipt_outlined, "GST Number", gstController.text),
           _divider(),
-          _infoOrEditRow(
+          _infoRow(
             Icons.category_outlined,
             "Business Type",
-            businessTypeController,
+            businessTypeController.text,
           ),
         ],
       ),
     );
   }
 
-  Widget _infoOrEditRow(
-    IconData icon,
-    String label,
-    TextEditingController ctrl,
-  ) {
-    if (isEditing) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: TextField(
-          controller: ctrl,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: AppColors.titleText,
-          ),
-          decoration: InputDecoration(
-            labelText: label,
-            labelStyle: const TextStyle(
-              fontSize: 13,
-              color: AppColors.bodyText,
-            ),
-            prefixIcon: Icon(icon, color: AppColors.vendor, size: 18),
-            filled: true,
-            fillColor: AppColors.background,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: AppColors.border),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: AppColors.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: AppColors.vendor, width: 1.5),
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 12,
-              horizontal: 16,
-            ),
-          ),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: AppColors.vendor),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.bodyText,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  ctrl.text.isEmpty ? "Not provided" : ctrl.text,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: ctrl.text.isEmpty
-                        ? AppColors.bodyText
-                        : AppColors.titleText,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── Locations ────────────────────────────────────────────────────────────
+  // ── Locations Card ─────────────────────────────────────────────────────────
   Widget _buildLocationsCard() {
     return _card(
       child: Column(
@@ -585,17 +686,18 @@ class _VendorProfilePageState extends State<VendorProfilePage>
               children: [
                 Row(
                   children: [
-                    Text(
-                      address["label"] ?? "Location",
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: isDefault
-                            ? AppColors.vendor
-                            : AppColors.titleText,
+                    Expanded(
+                      child: Text(
+                        address["label"] ?? "Location",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          color: isDefault
+                              ? AppColors.vendor
+                              : AppColors.titleText,
+                        ),
                       ),
                     ),
-                    const Spacer(),
                     if (isDefault)
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -634,7 +736,7 @@ class _VendorProfilePageState extends State<VendorProfilePage>
     );
   }
 
-  // ─── Logout ───────────────────────────────────────────────────────────────
+  // ── Logout ─────────────────────────────────────────────────────────────────
   Widget _buildLogoutButton() {
     return SizedBox(
       width: double.infinity,
@@ -662,7 +764,7 @@ class _VendorProfilePageState extends State<VendorProfilePage>
     );
   }
 
-  // ─── Shared helpers ───────────────────────────────────────────────────────
+  // ── Shared helpers ─────────────────────────────────────────────────────────
   Widget _card({required Widget child}) {
     return Container(
       width: double.infinity,
@@ -670,7 +772,7 @@ class _VendorProfilePageState extends State<VendorProfilePage>
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border, width: 1),
+        border: Border.all(color: AppColors.border),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -691,6 +793,44 @@ class _VendorProfilePageState extends State<VendorProfilePage>
         fontWeight: FontWeight.w700,
         color: AppColors.bodyText,
         letterSpacing: 0.5,
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppColors.vendor),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.bodyText,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value.isEmpty ? "Not provided" : value,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: value.isEmpty
+                        ? AppColors.bodyText
+                        : AppColors.titleText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -723,6 +863,85 @@ class _VendorProfilePageState extends State<VendorProfilePage>
               style: const TextStyle(fontSize: 12, color: AppColors.bodyText),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController ctrl,
+    String label,
+    IconData icon,
+  ) {
+    return TextField(
+      controller: ctrl,
+      style: const TextStyle(
+        fontSize: 14,
+        fontWeight: FontWeight.w500,
+        color: AppColors.titleText,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(fontSize: 13, color: AppColors.bodyText),
+        prefixIcon: Icon(icon, color: AppColors.vendor, size: 18),
+        filled: true,
+        fillColor: AppColors.background,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: AppColors.border),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.vendor, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 14,
+          horizontal: 16,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPrimaryButton(String text, VoidCallback onTap) {
+    return SizedBox(
+      height: 48,
+      child: ElevatedButton(
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.vendor,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOutlinedButton(String text, VoidCallback onTap) {
+    return SizedBox(
+      height: 48,
+      child: OutlinedButton(
+        onPressed: onTap,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.bodyText,
+          side: BorderSide(color: AppColors.border),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
         ),
       ),
     );

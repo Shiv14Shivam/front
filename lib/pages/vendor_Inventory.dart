@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:front/services/api_service.dart';
 import 'package:front/theme/app_colors.dart';
+import 'package:front/utils/responsive.dart';
 import '../view_type.dart';
+import '../widgets/web_scaffold.dart'; // ✅ added
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODEL
@@ -241,7 +243,6 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
     return base;
   }
 
-  // ── Restock — optimistic ───────────────────────────────────────────────────
   Future<void> _restock(_Listing listing, int bags) async {
     final optimistic = listing.withStock(listing.availableStock + bags);
     setState(() {
@@ -267,7 +268,6 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
     }
   }
 
-  // ── Update prices — optimistic ─────────────────────────────────────────────
   Future<void> _updatePrices(_Listing listing, double ppb, double dcpt) async {
     final optimistic = listing.withPrices(ppb, dcpt);
     setState(() {
@@ -313,41 +313,60 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
   }
 
   // ── Build ──────────────────────────────────────────────────────────────────
+  // ✅ Only this method changed — WebScaffold wraps the original Scaffold
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      extendBody: true,
-      bottomNavigationBar: _bottomNav(),
-      body: Column(
-        children: [
-          FadeTransition(
-            opacity: _headerFade,
-            child: SlideTransition(position: _headerSlide, child: _header()),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.vendor,
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                : _error != null
-                ? _errorView()
-                : RefreshIndicator(
-                    onRefresh: _load,
-                    color: AppColors.vendor,
-                    child: FadeTransition(
-                      opacity: _contentFade,
-                      child: SlideTransition(
-                        position: _contentSlide,
-                        child: _body(),
+    final bool isDesktop = Responsive.isDesktop(context);
+
+    return WebScaffold(
+      isVendor: true,
+      onSelectView: widget.onSelectView,
+      selectedIndex: 2,
+
+      body: Scaffold(
+        backgroundColor: AppColors.background,
+
+        // ✅ hide bottom nav on desktop
+        bottomNavigationBar: isDesktop ? null : _bottomNav(),
+
+        body: Column(
+          children: [
+            // ✅ mobile header only
+            if (!isDesktop)
+              FadeTransition(
+                opacity: _headerFade,
+                child: SlideTransition(
+                  position: _headerSlide,
+                  child: _header(),
+                ),
+              ),
+
+            Expanded(
+              child: _loading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppColors.vendor),
+                    )
+                  : _error != null
+                  ? _errorView()
+                  : RefreshIndicator(
+                      onRefresh: _load,
+                      child: FadeTransition(
+                        opacity: _contentFade,
+                        child: SlideTransition(
+                          position: _contentSlide,
+                          child: Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 1200),
+                              child: _bodyResponsive(),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -497,56 +516,150 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
   );
 
   // ── Body ───────────────────────────────────────────────────────────────────
-  Widget _body() {
+  Widget _bodyResponsive() {
     final items = _filtered;
+    final isDesktop = Responsive.isDesktop(context);
+
     return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (Responsive.isDesktop(context))
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      "Inventory",
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    _chip('$_total', 'Total'),
+                    const SizedBox(width: 8),
+                    _chip('$_outCount', 'OOS', isAlert: _outCount > 0),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // ✅ TABS ON DESKTOP
+                Wrap(
+                  spacing: 10,
+                  children: List.generate(_tabs.length, (i) {
+                    final active = _tab == i;
+                    return GestureDetector(
+                      onTap: () {
+                        if (_tab == i) return;
+                        setState(() {
+                          _tab = i;
+                          _search = '';
+                          _searchCtrl.clear();
+                        });
+                        _load();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: active ? AppColors.vendor : Colors.transparent,
+                          borderRadius: BorderRadius.circular(30),
+                          border: Border.all(
+                            color: AppColors.vendor.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Text(
+                          _tabs[i],
+                          style: TextStyle(
+                            color: active ? Colors.white : AppColors.vendor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           _searchBar(),
           const SizedBox(height: 12),
+
           if (_lowCount > 0) ...[_lowStockAlert(), const SizedBox(height: 14)],
+
           Text(
-            '${items.length} product${items.length == 1 ? '' : 's'}',
+            '${items.length} products',
             style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
               color: AppColors.titleText,
             ),
           ),
-          const SizedBox(height: 10),
+
+          const SizedBox(height: 12),
+
           if (items.isEmpty)
             _empty()
+          else if (isDesktop)
+            _gridView(items)
           else
-            ...List.generate(
-              items.length,
-              (i) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: 1),
-                  duration: Duration(milliseconds: 300 + i * 60),
-                  curve: Curves.easeOut,
-                  builder: (_, v, child) => Opacity(
-                    opacity: v,
-                    child: Transform.translate(
-                      offset: Offset(0, 16 * (1 - v)),
-                      child: child,
-                    ),
-                  ),
-                  child: _Card(
-                    listing: items[i],
-                    onRestock: (bags) => _restock(items[i], bags),
-                    onUpdatePrices: (ppb, dcpt) =>
-                        _updatePrices(items[i], ppb, dcpt),
-                  ),
-                ),
-              ),
-            ),
-          const SizedBox(height: 8),
-          _addBanner(),
+            _listView(items),
+
+          const SizedBox(height: 20),
+          const SizedBox(height: 20),
+
+          if (!Responsive.isDesktop(context)) _addBanner(),
         ],
+      ),
+    );
+  }
+
+  Widget _listView(List<_Listing> items) {
+    return Column(
+      children: List.generate(
+        items.length,
+        (i) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _Card(
+            listing: items[i],
+            onRestock: (bags) => _restock(items[i], bags),
+            onUpdatePrices: (ppb, dcpt) => _updatePrices(items[i], ppb, dcpt),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _gridView(List<_Listing> items) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: items.length,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: Responsive.value(
+          context,
+          mobile: 1,
+          tablet: 2,
+          desktop: 3, // ✅ more columns
+        ),
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: Responsive.value(
+          context,
+          mobile: 1.3,
+          tablet: 1.5,
+          desktop: 1.9, // ✅ smaller cards
+        ),
+      ),
+      itemBuilder: (_, i) => _Card(
+        listing: items[i],
+        onRestock: (bags) => _restock(items[i], bags),
+        onUpdatePrices: (ppb, dcpt) => _updatePrices(items[i], ppb, dcpt),
       ),
     );
   }
@@ -820,6 +933,7 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
     ),
   );
 
+  // ── Bottom Nav (mobile only) ───────────────────────────────────────────────
   Widget _bottomNav() => Container(
     decoration: BoxDecoration(
       color: AppColors.surface,
@@ -891,7 +1005,7 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LISTING CARD
+// LISTING CARD — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _Card extends StatelessWidget {
@@ -930,7 +1044,6 @@ class _Card extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Top row ────────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
             child: Row(
@@ -985,7 +1098,6 @@ class _Card extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      // ── Price row with edit button ──────────────────────────
                       Row(
                         children: [
                           Text(
@@ -1060,7 +1172,6 @@ class _Card extends StatelessWidget {
             ),
           ),
 
-          // ── Rejection reason ───────────────────────────────────────────────
           if (l.status == 'rejected' && l.rejectionReason != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
@@ -1096,7 +1207,6 @@ class _Card extends StatelessWidget {
               ),
             ),
 
-          // ── OOS ribbon / stock info ────────────────────────────────────────
           if (l.isOos)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1178,7 +1288,6 @@ class _Card extends StatelessWidget {
               ),
             ),
 
-          // ── Action buttons ─────────────────────────────────────────────────
           Container(
             decoration: BoxDecoration(
               border: Border(top: BorderSide(color: AppColors.divider)),
@@ -1189,7 +1298,6 @@ class _Card extends StatelessWidget {
             child: IntrinsicHeight(
               child: Row(
                 children: [
-                  // Restock
                   Expanded(
                     flex: 2,
                     child: Material(
@@ -1234,9 +1342,7 @@ class _Card extends StatelessWidget {
                       ),
                     ),
                   ),
-                  // Divider
                   const VerticalDivider(width: 1, color: AppColors.divider),
-                  // Edit Price
                   Expanded(
                     flex: 2,
                     child: Material(
@@ -1305,7 +1411,7 @@ class _Card extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RESTOCK SHEET
+// RESTOCK SHEET — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _RestockSheet extends StatefulWidget {
@@ -1513,7 +1619,7 @@ class _RestockSheetState extends State<_RestockSheet> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// EDIT PRICE SHEET
+// EDIT PRICE SHEET — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EditPriceSheet extends StatefulWidget {
@@ -1569,7 +1675,6 @@ class _EditPriceSheetState extends State<_EditPriceSheet> {
     final ppb = double.tryParse(_ppbCtrl.text);
     final dcpt = double.tryParse(_dcptCtrl.text);
     if (ppb == null || dcpt == null) return;
-    // check nothing actually changed
     if (ppb == widget.listing.pricePerBag &&
         dcpt == widget.listing.deliveryChargePerTon) {
       Navigator.pop(context);
@@ -1624,8 +1729,6 @@ class _EditPriceSheetState extends State<_EditPriceSheet> {
               ),
             ),
             const SizedBox(height: 20),
-
-            // Price per bag
             const Text(
               'Price per bag',
               style: TextStyle(
@@ -1698,10 +1801,7 @@ class _EditPriceSheetState extends State<_EditPriceSheet> {
                 ),
               ),
             ),
-
             const SizedBox(height: 16),
-
-            // Delivery charge per ton
             const Text(
               'Delivery charge per ton',
               style: TextStyle(
@@ -1774,9 +1874,7 @@ class _EditPriceSheetState extends State<_EditPriceSheet> {
                 ),
               ),
             ),
-
             const SizedBox(height: 20),
-
             GestureDetector(
               onTap: _valid ? _confirm : null,
               child: AnimatedContainer(
@@ -1821,7 +1919,7 @@ class _EditPriceSheetState extends State<_EditPriceSheet> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STATUS BADGE
+// STATUS BADGE — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _Badge extends StatelessWidget {

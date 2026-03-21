@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../view_type.dart';
+import '../widgets/web_scaffold.dart';
 
 class VendorRequestedOrder extends StatefulWidget {
   final void Function(
@@ -32,11 +33,13 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
 
   final Map<int, String> _loadingStates = {};
 
-  // Vendor's coordinates — loaded from their default address
   double? _vendorLat;
   double? _vendorLng;
 
-  // ── Haversine distance formula ─────────────────────────────────────────────
+  int _tab = 0;
+  final _tabs = ["All", "Pending", "Accepted", "Declined"];
+
+  // ── Haversine ──────────────────────────────────────────────────────────────
   double _haversine(double lat1, double lon1, double lat2, double lon2) {
     const R = 6371.0;
     final dLat = (lat2 - lat1) * pi / 180;
@@ -50,6 +53,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -65,11 +69,14 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     _loadVendorAddressAndOrders();
   }
 
-  // ── Load vendor's default address to get their lat/lng ────────────────────
-  // Same approach as AddressController — uses the geocoded lat/lng
-  // stored when the vendor saved their address via Nominatim
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
+  }
+
+  // ── Data ───────────────────────────────────────────────────────────────────
   Future<void> _loadVendorAddressAndOrders() async {
-    // Try default address first (same endpoint customer uses)
     final defaultAddr = await _api.getDefaultAddress();
     if (defaultAddr["success"] == true) {
       final data = defaultAddr["data"] as Map<String, dynamic>? ?? {};
@@ -77,7 +84,6 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
       _vendorLng = double.tryParse(data["longitude"]?.toString() ?? "");
     }
 
-    // Fallback: if no default address, try warehouse_lat/lng from profile
     if (_vendorLat == null || _vendorLng == null) {
       final profile = await _api.getProfile();
       if (profile["success"] == true) {
@@ -86,17 +92,9 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
         _vendorLng = double.tryParse(user["warehouse_lng"]?.toString() ?? "");
       }
     }
-
     _loadOrders();
   }
 
-  @override
-  void dispose() {
-    _fadeController.dispose();
-    super.dispose();
-  }
-
-  // ── Load orders ────────────────────────────────────────────────────────────
   Future<void> _loadOrders() async {
     setState(() {
       _isLoading = true;
@@ -107,12 +105,10 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
 
     if (result["success"] == true) {
       final List raw = result["data"] ?? [];
-      final entries = raw
-          .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
-          .toList();
-
       setState(() {
-        _entries = entries;
+        _entries = raw
+            .map<Map<String, dynamic>>((e) => Map<String, dynamic>.from(e))
+            .toList();
         _isLoading = false;
       });
     } else {
@@ -124,12 +120,11 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     }
   }
 
-  // ── Accept ─────────────────────────────────────────────────────────────────
+  // ── Actions ────────────────────────────────────────────────────────────────
   Future<void> _accept(int orderItemId) async {
     setState(() => _loadingStates[orderItemId] = 'accepting');
     final result = await _api.acceptVendorOrder(orderItemId);
     setState(() => _loadingStates.remove(orderItemId));
-
     if (result["success"] == true) {
       _snack("Order accepted successfully!", isSuccess: true);
       _loadOrders();
@@ -138,15 +133,12 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     }
   }
 
-  // ── Decline ────────────────────────────────────────────────────────────────
   Future<void> _decline(int orderItemId) async {
     final reason = await _showDeclineDialog();
     if (reason == null) return;
-
     setState(() => _loadingStates[orderItemId] = 'declining');
     final result = await _api.declineVendorOrder(orderItemId, reason: reason);
     setState(() => _loadingStates.remove(orderItemId));
-
     if (result["success"] == true) {
       _snack("Order declined.", isSuccess: false);
       _loadOrders();
@@ -155,7 +147,6 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     }
   }
 
-  // ── Decline dialog ─────────────────────────────────────────────────────────
   Future<String?> _showDeclineDialog() {
     final controller = TextEditingController();
     return showDialog<String>(
@@ -256,29 +247,17 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     );
   }
 
+  // ── Computed ───────────────────────────────────────────────────────────────
   int get _pendingCount => _entries.where((e) {
     final item = e["order_item"] as Map<String, dynamic>? ?? {};
     return (item["status"] ?? "").toString().toLowerCase() == "pending";
   }).length;
 
-  // ── Compute display distance ───────────────────────────────────────────────
-  // Priority:
-  //   1. distance_km already stored on order_item (set at order placement)
-  //   2. Haversine: vendor default address lat/lng vs customer delivery address lat/lng
-  //      (both geocoded via Nominatim — same as RequestOrderPage)
-  //   3. "—" if coordinates unavailable
   String _displayDistance(Map<String, dynamic> entry) {
     final item = entry["order_item"] as Map<String, dynamic>? ?? {};
-
-    // 1. Pre-computed value stored on the order item
     final stored = double.tryParse(item["distance_km"]?.toString() ?? "");
-    if (stored != null && stored > 0) {
-      return "${stored.toStringAsFixed(1)} km";
-    }
+    if (stored != null && stored > 0) return "${stored.toStringAsFixed(1)} km";
 
-    // 2. Calculate using Haversine — same formula as RequestOrderPage
-    //    vendor lat/lng = their default address (geocoded via Nominatim)
-    //    customer lat/lng = their delivery address (geocoded via Nominatim)
     final address = entry["delivery_address"] as Map<String, dynamic>?;
     final custLat = double.tryParse(address?["latitude"]?.toString() ?? "");
     final custLng = double.tryParse(address?["longitude"]?.toString() ?? "");
@@ -290,24 +269,72 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
       final dist = _haversine(_vendorLat!, _vendorLng!, custLat, custLng);
       return "${dist.toStringAsFixed(1)} km";
     }
-
     return "—";
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  List<Map<String, dynamic>> get _filteredEntries {
+    if (_tab == 0) return _entries;
+    return _entries.where((e) {
+      final status = ((e["order_item"] ?? {})["status"] ?? "")
+          .toString()
+          .toLowerCase();
+      if (_tab == 1) return status == "pending";
+      if (_tab == 2) return status == "accepted";
+      if (_tab == 3) return status == "declined";
+      return true;
+    }).toList();
+  }
+
+  // ── Color helpers ──────────────────────────────────────────────────────────
+  Color _bgColor(String s) {
+    if (s == 'accepted') return const Color(0xFFF0FAF0);
+    if (s == 'declined') return AppColors.error.withOpacity(0.08);
+    return const Color(0xFFFFF3E0);
+  }
+
+  Color _textColor(String s) {
+    if (s == 'accepted') return AppColors.success;
+    if (s == 'declined') return AppColors.error;
+    return Colors.orange;
+  }
+
+  Color _borderColor(String s) {
+    if (s == 'accepted') return AppColors.success.withOpacity(0.3);
+    if (s == 'declined') return AppColors.error.withOpacity(0.3);
+    return AppColors.border;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // BUILD
-  // ═══════════════════════════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(child: _buildBody()),
-          ],
+    return WebScaffold(
+      isVendor: true,
+      onSelectView: widget.onSelectView,
+      selectedIndex: 1,
+      body: Scaffold(
+        backgroundColor: AppColors.background,
+        body: FadeTransition(
+          opacity: _fadeAnimation,
+          // ✅ Column + Expanded gives every child (shimmer, list, error,
+          // empty) a finite height — no more overflow stripes at any state.
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(),
+              _buildFilters(),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1100),
+                    child: _buildBody(),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -316,7 +343,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
   // ── Header ─────────────────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
-      decoration: const BoxDecoration(color: Colors.white),
+      color: Colors.white,
       child: SafeArea(
         bottom: false,
         child: Padding(
@@ -388,25 +415,99 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     );
   }
 
-  // ── Body ───────────────────────────────────────────────────────────────────
-  Widget _buildBody() {
-    if (_isLoading) return _buildShimmer();
-    if (_hasError) return _buildError();
-    if (_entries.isEmpty) return _buildEmpty();
-
-    return RefreshIndicator(
-      onRefresh: _loadOrders,
-      color: AppColors.primary,
-      child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-        itemCount: _entries.length,
-        itemBuilder: (_, i) => _buildCard(_entries[i]),
+  // ── Filters ────────────────────────────────────────────────────────────────
+  Widget _buildFilters() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Row(
+        children: List.generate(_tabs.length, (i) {
+          final active = _tab == i;
+          return GestureDetector(
+            onTap: () => setState(() => _tab = i),
+            child: Container(
+              margin: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: active ? AppColors.primary : AppColors.surface,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Text(
+                _tabs[i],
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: active ? Colors.white : AppColors.titleText,
+                ),
+              ),
+            ),
+          );
+        }),
       ),
     );
   }
 
-  // ── Order Card ─────────────────────────────────────────────────────────────
+  // ── Body ───────────────────────────────────────────────────────────────────
+  Widget _buildBody() {
+    if (_isLoading) return _buildShimmer();
+    if (_hasError) return _buildError();
+    if (_filteredEntries.isEmpty) return _buildEmpty();
+
+    return RefreshIndicator(
+      onRefresh: _loadOrders,
+      color: AppColors.primary,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 600;
+
+          if (!isWide) {
+            return ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+              itemCount: _filteredEntries.length,
+              itemBuilder: (_, i) => Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _buildCard(_filteredEntries[i]),
+              ),
+            );
+          }
+
+          // Two-column layout — IntrinsicHeight lets each row grow to the
+          // taller card without any fixed height / aspect ratio.
+          final items = _filteredEntries;
+          final rowCount = (items.length / 2).ceil();
+
+          return ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            itemCount: rowCount,
+            itemBuilder: (_, rowIndex) {
+              final l = rowIndex * 2;
+              final r = l + 1;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: _buildCard(items[l])),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: r < items.length
+                            ? _buildCard(items[r])
+                            : const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  // ── Card ───────────────────────────────────────────────────────────────────
   Widget _buildCard(Map<String, dynamic> entry) {
     final item = (entry["order_item"] as Map<String, dynamic>? ?? {});
     final customer = (entry["customer"] as Map<String, dynamic>? ?? {});
@@ -426,22 +527,21 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
         double.tryParse(item["subtotal"]?.toString() ?? "0") ?? 0.0;
 
     final String deliveryAddr = address != null
-        ? "${address["address_line_1"] ?? ""}, ${address["city"] ?? ""}, ${address["state"] ?? ""} - ${address["pincode"] ?? ""}"
+        ? "${address["address_line_1"] ?? ""}, ${address["city"] ?? ""}, "
+              "${address["state"] ?? ""} - ${address["pincode"] ?? ""}"
         : "Address not provided";
 
     final String distanceDisplay = _displayDistance(entry);
-
     final bool isPending = status == "pending";
     final bool isAccepting = _loadingStates[itemId] == 'accepting';
     final bool isDeclining = _loadingStates[itemId] == 'declining';
     final bool isBusy = isAccepting || isDeclining;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _borderColor(status), width: 1),
+        border: Border.all(color: _borderColor(status)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -452,64 +552,73 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min, // ✅ shrink to content
         children: [
-          // ── Header row ──
+          // Order header
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Order #$orderId",
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.titleText,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Text(
-                          customerName,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.bodyText,
-                          ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Order #$orderId",
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.titleText,
                         ),
-                        if (customerPhone.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            width: 3,
-                            height: 3,
-                            decoration: const BoxDecoration(
-                              color: AppColors.subtleText,
-                              shape: BoxShape.circle,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              customerName,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.bodyText,
+                              ),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Icon(
-                            Icons.phone_outlined,
-                            size: 11,
-                            color: AppColors.primary,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            customerPhone,
-                            style: const TextStyle(
-                              fontSize: 12,
+                          if (customerPhone.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              width: 3,
+                              height: 3,
+                              decoration: const BoxDecoration(
+                                color: AppColors.subtleText,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.phone_outlined,
+                              size: 11,
                               color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
                             ),
-                          ),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                customerPhone,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 _statusBadge(status),
               ],
             ),
@@ -517,7 +626,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
 
           Divider(height: 1, color: AppColors.border.withOpacity(0.5)),
 
-          // ── Product block ──
+          // Product block
           Padding(
             padding: const EdgeInsets.all(16),
             child: Container(
@@ -583,7 +692,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
             ),
           ),
 
-          // ── Delivery address ──
+          // Delivery address
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
             child: Container(
@@ -596,7 +705,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.location_on_outlined,
                     color: AppColors.primary,
                     size: 16,
@@ -631,7 +740,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
             ),
           ),
 
-          // ── Total amount ──
+          // Total amount
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
             child: Container(
@@ -665,7 +774,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
             ),
           ),
 
-          // ── Action buttons ──
+          // Action buttons
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
             child: isPending
@@ -768,7 +877,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     );
   }
 
-  // ── Info chip ──────────────────────────────────────────────────────────────
+  // ── Chip ───────────────────────────────────────────────────────────────────
   Widget _chip(String label, String value, IconData icon) {
     return Container(
       padding: const EdgeInsets.all(10),
@@ -842,33 +951,14 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     );
   }
 
-  // ── Color helpers ──────────────────────────────────────────────────────────
-  Color _bgColor(String s) {
-    if (s == 'accepted') return const Color(0xFFF0FAF0);
-    if (s == 'declined') return AppColors.error.withOpacity(0.08);
-    return const Color(0xFFFFF3E0);
-  }
-
-  Color _textColor(String s) {
-    if (s == 'accepted') return AppColors.success;
-    if (s == 'declined') return AppColors.error;
-    return Colors.orange;
-  }
-
-  Color _borderColor(String s) {
-    if (s == 'accepted') return AppColors.success.withOpacity(0.3);
-    if (s == 'declined') return AppColors.error.withOpacity(0.3);
-    return AppColors.border;
-  }
-
   // ── Shimmer ────────────────────────────────────────────────────────────────
+  // ✅ ListView (not Column) scrolls inside the bounded Expanded — no overflow
   Widget _buildShimmer() {
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: 3,
       itemBuilder: (_, __) => Container(
         margin: const EdgeInsets.only(bottom: 16),
-        height: 260,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -877,6 +967,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
         child: Padding(
           padding: const EdgeInsets.all(18),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
@@ -915,7 +1006,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     );
   }
 
-  // ── Error state ────────────────────────────────────────────────────────────
+  // ── Error ──────────────────────────────────────────────────────────────────
   Widget _buildError() {
     return Center(
       child: Padding(
@@ -974,7 +1065,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     );
   }
 
-  // ── Empty state ────────────────────────────────────────────────────────────
+  // ── Empty ──────────────────────────────────────────────────────────────────
   Widget _buildEmpty() {
     return Center(
       child: Column(

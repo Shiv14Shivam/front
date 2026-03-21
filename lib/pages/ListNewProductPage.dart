@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../view_type.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/web_scaffold.dart'; // ✅ added
 
 class AddProductPage extends StatefulWidget {
   final Function(ViewType) onSelectView;
@@ -65,9 +66,7 @@ class _AddProductPageState extends State<AddProductPage>
       categories = await api.getCategories();
       setState(() {});
     } catch (_) {
-      if (mounted) {
-        _showSnack("Failed to load categories", isSuccess: false);
-      }
+      if (mounted) _showSnack("Failed to load categories", isSuccess: false);
     }
   }
 
@@ -167,86 +166,87 @@ class _AddProductPageState extends State<AddProductPage>
     }
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
-
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ✅ Only this method changed — WebScaffold wraps original Scaffold
+  // ═══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     final product = selectedProductObj;
 
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          FadeTransition(
-            opacity: _fadeAnim,
-            child: Column(
-              children: [
-                _buildHeader(),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Progress indicator
-                        _buildProgressBar(product),
-                        const SizedBox(height: 24),
-
-                        // Step 1 — Category
-                        _stepCard(
-                          step: 1,
-                          title: "Select Category",
-                          isActive: true,
-                          child: _buildCategoryGrid(),
-                        ),
-
-                        // Step 2 — Brand
-                        if (selectedCategory.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          _stepCard(
-                            step: 2,
-                            title: "Select Brand",
-                            isActive: true,
-                            child: _buildBrandList(),
-                          ),
-                        ],
-
-                        // Step 3 — Product
-                        if (selectedBrand.isNotEmpty) ...[
-                          const SizedBox(height: 16),
-                          _stepCard(
-                            step: 3,
-                            title: "Select Product",
-                            isActive: true,
-                            child: _buildProductList(),
-                          ),
-                        ],
-
-                        // Product details + pricing
-                        if (product != null) ...[
-                          const SizedBox(height: 16),
-                          _buildProductDetailsCard(product),
-                          const SizedBox(height: 16),
-                          _stepCard(
-                            step: 4,
-                            title: "Set Your Pricing",
-                            isActive: true,
-                            child: _buildPricingFields(product),
-                          ),
+    return WebScaffold(
+      isVendor: true,
+      onSelectView: widget.onSelectView,
+      selectedIndex: 3, // List Product = index 3 in vendor sidebar
+      body: Scaffold(
+        backgroundColor: AppColors.background,
+        body: Stack(
+          children: [
+            FadeTransition(
+              opacity: _fadeAnim,
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildProgressBar(product),
                           const SizedBox(height: 24),
-                          _buildSubmitButton(),
+
+                          _stepCard(
+                            step: 1,
+                            title: "Select Category",
+                            isActive: true,
+                            child: _buildCategoryGrid(),
+                          ),
+
+                          if (selectedCategory.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            _stepCard(
+                              step: 2,
+                              title: "Select Brand",
+                              isActive: true,
+                              child: _buildBrandList(),
+                            ),
+                          ],
+
+                          if (selectedBrand.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            _stepCard(
+                              step: 3,
+                              title: "Select Product",
+                              isActive: true,
+                              child: _buildProductList(),
+                            ),
+                          ],
+
+                          if (product != null) ...[
+                            const SizedBox(height: 16),
+                            _buildProductDetailsCard(product),
+                            const SizedBox(height: 16),
+                            _stepCard(
+                              step: 4,
+                              title: "Set Your Pricing",
+                              isActive: true,
+                              child: _buildPricingFields(product),
+                            ),
+                            const SizedBox(height: 24),
+                            _buildSubmitButton(),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          // Success overlay
-          if (showSuccess) _buildSuccessOverlay(),
-        ],
+            if (showSuccess) _buildSuccessOverlay(),
+          ],
+        ),
       ),
     );
   }
@@ -675,7 +675,6 @@ class _AddProductPageState extends State<AddProductPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row
           Row(
             children: [
               Container(
@@ -702,8 +701,6 @@ class _AddProductPageState extends State<AddProductPage>
             ],
           ),
           Divider(color: AppColors.border.withOpacity(0.6), height: 24),
-
-          // Detail rows
           _detailRow("Product", product["name"]),
           _detailRow("Brand", product["brand"]?["name"] ?? ""),
           _detailRow("Unit", product["unit"] ?? ""),
@@ -711,8 +708,6 @@ class _AddProductPageState extends State<AddProductPage>
             _detailRow("Description", product["description"]),
           if ((product["detailed_description"] ?? "").isNotEmpty)
             _detailRow("Details", product["detailed_description"]),
-
-          // Specifications
           if ((product["specifications"] ?? []).isNotEmpty) ...[
             const SizedBox(height: 4),
             const Text(

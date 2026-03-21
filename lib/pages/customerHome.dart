@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../view_type.dart';
+import '../widgets/web_scaffold.dart';
+import '../utils/responsive.dart';
 import 'dart:math';
 
 class CustomerHomePage extends StatefulWidget {
@@ -22,12 +25,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     with TickerProviderStateMixin {
   final ApiService api = ApiService();
 
-  // ═══════════════════════════════════════════════════════════════
-  // HAVERSINE DISTANCE FORMULA
-  // Used in the product detail modal to calculate delivery distance.
-  // Same formula used in CartPage — both use customer default address
-  // vs vendor warehouse address from their default address.
-  // ═══════════════════════════════════════════════════════════════
   double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
     const R = 6371.0;
     final dLat = (lat2 - lat1) * pi / 180;
@@ -41,33 +38,23 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
-  // ── Marketplace data ─────────────────────────────────────────
   List<dynamic> products = [];
   List<dynamic> filteredProducts = [];
   dynamic selectedProduct;
 
-  // ── Input controllers ────────────────────────────────────────
   final TextEditingController distanceController = TextEditingController();
   final TextEditingController quantityController = TextEditingController();
   final TextEditingController searchController = TextEditingController();
 
-  // ── UI state ─────────────────────────────────────────────────
   double totalCost = 0;
   bool isLoading = true;
   bool isLoadingDetails = false;
-
-  // ── Cart badge count ─────────────────────────────────────────
-  // Loaded from GET /api/cart summary.total_items on init.
-  // Updated after each successful addToCart call.
-  // Displayed on the bottom nav cart icon.
   int _cartCount = 0;
-
   int _selectedNavIndex = 0;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
-  // ── Category filter ──────────────────────────────────────────
   String selectedCategory = "All";
   List<String> categories = ["All"];
 
@@ -83,14 +70,9 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       curve: Curves.easeOut,
     );
     loadMarketplace();
-    _loadCartCount(); // Load real cart count from API on start
+    _loadCartCount();
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // LOAD CART COUNT
-  // Calls GET /api/cart and reads summary.total_items.
-  // This keeps the bottom nav badge accurate on page load.
-  // ═══════════════════════════════════════════════════════════════
   Future<void> _loadCartCount() async {
     final result = await api.getCart();
     if (result["success"] == true) {
@@ -99,11 +81,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // LOAD MARKETPLACE
-  // Fetches all active listings from GET /api/marketplace (public).
-  // Extracts unique category names for the filter chips.
-  // ═══════════════════════════════════════════════════════════════
   Future<void> loadMarketplace() async {
     try {
       final data = await api.getMarketplaceListings();
@@ -124,11 +101,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // LOAD PRODUCT DETAILS
-  // Called when user taps a product card.
-  // Fetches full product info and merges with listing data.
-  // ═══════════════════════════════════════════════════════════════
   Future<void> loadProductDetails(dynamic listing) async {
     setState(() => isLoadingDetails = true);
     try {
@@ -155,7 +127,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     }
   }
 
-  // ── Search + category filter helpers ────────────────────────
   void filterProducts(String query) =>
       _applyFilters(query: query, category: selectedCategory);
 
@@ -189,6 +160,31 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     });
   }
 
+  // ✅ Robust firm_name extractor — checks every possible API path
+  // The vendors table has firm_name; the API may return it at different depths
+  String _getFirmName(Map<String, dynamic> seller) {
+    // 1. Directly on seller (flattened API response)
+    final direct = seller["firm_name"];
+    if (direct is String && direct.trim().isNotEmpty) return direct.trim();
+
+    // 2. Nested under seller["vendor"] (most common Laravel relationship)
+    final vendor = seller["vendor"];
+    if (vendor is Map) {
+      final nested = vendor["firm_name"];
+      if (nested is String && nested.trim().isNotEmpty) return nested.trim();
+    }
+
+    // 3. Nested under seller["vendor_profile"]
+    final vendorProfile = seller["vendor_profile"];
+    if (vendorProfile is Map) {
+      final nested = vendorProfile["firm_name"];
+      if (nested is String && nested.trim().isNotEmpty) return nested.trim();
+    }
+
+    // 4. Fall back to owner name
+    return (seller["name"] as String? ?? "").trim();
+  }
+
   @override
   void dispose() {
     searchController.dispose();
@@ -198,36 +194,45 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     super.dispose();
   }
 
-  // ─────────────────────── BUILD ───────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
-          isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
-                )
-              : FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: Column(
-                    children: [
-                      _buildHeader(),
-                      _buildCategoryChips(),
-                      Expanded(child: _buildProductGrid()),
-                    ],
+    final bool isDesktop = kIsWeb && !Responsive.isMobile(context);
+
+    return WebScaffold(
+      isVendor: false,
+      onSelectView: widget.onSelectView,
+      selectedIndex: 0,
+      body: Scaffold(
+        backgroundColor: AppColors.background,
+        body: Stack(
+          children: [
+            isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  )
+                : FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: Column(
+                      children: [
+                        if (!isDesktop) _buildHeader(),
+                        _buildCategoryChips(isDesktop: isDesktop),
+                        Expanded(
+                          child: _buildProductGrid(isDesktop: isDesktop),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-          if (isLoadingDetails) _buildLoadingOverlay(),
-          if (selectedProduct != null) _productDetailModal(),
-          _bottomNav(),
-        ],
+            if (isLoadingDetails) _buildLoadingOverlay(),
+            if (selectedProduct != null)
+              _productDetailModal(isDesktop: isDesktop),
+            if (!isDesktop) _bottomNav(),
+          ],
+        ),
       ),
     );
   }
 
-  // ─────────────────────── HEADER ──────────────────────────────
+  // ── Mobile header ─────────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
       decoration: const BoxDecoration(color: AppColors.primary),
@@ -241,9 +246,9 @@ class _CustomerHomePageState extends State<CustomerHomePage>
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
+                  const Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Text(
                         "Marketplace",
                         style: TextStyle(
@@ -260,65 +265,17 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                       ),
                     ],
                   ),
-                  _headerIconBtn(Icons.notifications_none_rounded, () {}),
+                  _headerIconBtn(
+                    Icons.notifications_none_rounded,
+                    () => widget.onSelectView(ViewType.notifications),
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 18),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: AppColors.shadowMedium,
-                      blurRadius: 12,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: TextField(
-                  controller: searchController,
-                  onChanged: filterProducts,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.titleText,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: "Search products...",
-                    hintStyle: const TextStyle(
-                      color: AppColors.subtleText,
-                      fontSize: 14,
-                    ),
-                    prefixIcon: const Icon(
-                      Icons.search_rounded,
-                      color: AppColors.subtleText,
-                      size: 20,
-                    ),
-                    suffixIcon: searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(
-                              Icons.close_rounded,
-                              color: AppColors.subtleText,
-                              size: 18,
-                            ),
-                            onPressed: () {
-                              searchController.clear();
-                              filterProducts("");
-                            },
-                          )
-                        : null,
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                  ),
-                ),
-              ),
+              child: _searchBarWidget(onWhite: true),
             ),
           ],
         ),
@@ -342,45 +299,120 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── CATEGORY CHIPS ──────────────────────
-  Widget _buildCategoryChips() {
+  // ── Search bar ────────────────────────────────────────────────────────────
+  Widget _searchBarWidget({bool onWhite = false}) {
     return Container(
-      height: 54,
-      color: AppColors.surface,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        itemCount: categories.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (context, i) {
-          final cat = categories[i];
-          final selected = cat == selectedCategory;
-          return GestureDetector(
-            onTap: () => filterByCategory(cat),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              decoration: BoxDecoration(
-                color: selected ? AppColors.primary : AppColors.primaryMuted,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                cat,
-                style: TextStyle(
-                  color: selected ? Colors.white : AppColors.bodyText,
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+      decoration: BoxDecoration(
+        color: onWhite ? Colors.white : AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: onWhite ? null : Border.all(color: AppColors.border),
+        boxShadow: onWhite
+            ? const [
+                BoxShadow(
+                  color: AppColors.shadowMedium,
+                  blurRadius: 12,
+                  offset: Offset(0, 4),
                 ),
-              ),
-            ),
-          );
-        },
+              ]
+            : null,
+      ),
+      child: TextField(
+        controller: searchController,
+        onChanged: filterProducts,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: AppColors.titleText,
+        ),
+        decoration: InputDecoration(
+          hintText: "Search products...",
+          hintStyle: const TextStyle(color: AppColors.subtleText, fontSize: 14),
+          prefixIcon: const Icon(
+            Icons.search_rounded,
+            color: AppColors.subtleText,
+            size: 20,
+          ),
+          suffixIcon: searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: AppColors.subtleText,
+                    size: 18,
+                  ),
+                  onPressed: () {
+                    searchController.clear();
+                    filterProducts("");
+                  },
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+        ),
       ),
     );
   }
 
-  // ─────────────────────── PRODUCT GRID ────────────────────────
-  Widget _buildProductGrid() {
+  // ── Category chips ────────────────────────────────────────────────────────
+  Widget _buildCategoryChips({required bool isDesktop}) {
+    return Container(
+      color: AppColors.surface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isDesktop)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+              child: _searchBarWidget(onWhite: false),
+            ),
+          SizedBox(
+            height: 54,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              itemCount: categories.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                final cat = categories[i];
+                final selected = cat == selectedCategory;
+                return GestureDetector(
+                  onTap: () => filterByCategory(cat),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.primaryMuted,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      cat,
+                      style: TextStyle(
+                        color: selected ? Colors.white : AppColors.bodyText,
+                        fontSize: 13,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Product grid ──────────────────────────────────────────────────────────
+  Widget _buildProductGrid({required bool isDesktop}) {
     if (filteredProducts.isEmpty) {
       return Center(
         child: Column(
@@ -401,20 +433,34 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       );
     }
 
+    final int columns = Responsive.value(
+      context,
+      mobile: 2,
+      tablet: 3,
+      desktop: 4,
+    );
+    final double aspectRatio = Responsive.value(
+      context,
+      mobile: 0.62,
+      tablet: 0.70,
+      desktop: 0.72,
+    );
+
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, isDesktop ? 32 : 100),
       itemCount: filteredProducts.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        childAspectRatio: 0.62,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 14,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        childAspectRatio: aspectRatio,
+        crossAxisSpacing: isDesktop ? 20 : 14,
+        mainAxisSpacing: isDesktop ? 20 : 14,
       ),
-      itemBuilder: (context, index) => _productCard(filteredProducts[index]),
+      itemBuilder: (context, index) =>
+          _productCard(filteredProducts[index], isDesktop: isDesktop),
     );
   }
 
-  Widget _productCard(dynamic p) {
+  Widget _productCard(dynamic p, {bool isDesktop = false}) {
     final imageUrl = p["product"]["image_url"] as String?;
     return GestureDetector(
       onTap: () => loadProductDetails(p),
@@ -455,7 +501,12 @@ class _CustomerHomePageState extends State<CustomerHomePage>
             Expanded(
               flex: 5,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                padding: EdgeInsets.fromLTRB(
+                  isDesktop ? 14 : 12,
+                  isDesktop ? 10 : 8,
+                  isDesktop ? 14 : 12,
+                  isDesktop ? 12 : 10,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -467,9 +518,9 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                           p["product"]["name"] ?? "",
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
-                            fontSize: 13.5,
+                            fontSize: isDesktop ? 14.5 : 13.5,
                             color: AppColors.titleText,
                           ),
                         ),
@@ -495,8 +546,8 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                           children: [
                             Text(
                               "₹${p["price_per_bag"]}",
-                              style: const TextStyle(
-                                fontSize: 16,
+                              style: TextStyle(
+                                fontSize: isDesktop ? 17 : 16,
                                 color: AppColors.primary,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -553,7 +604,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     } else if (name.contains("tile") || name.contains("marble")) {
       emoji = "🔲";
     }
-
     return Container(
       color: bg,
       child: Stack(
@@ -643,15 +693,17 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── PRODUCT DETAIL MODAL ────────────────
-  Widget _productDetailModal() {
+  // ── Product detail modal ──────────────────────────────────────────────────
+  Widget _productDetailModal({bool isDesktop = false}) {
     final p = selectedProduct;
-    final product = p["product"];
-    final seller = p["seller"];
+    final product = p["product"] as Map<String, dynamic>;
+    final seller = p["seller"] as Map<String, dynamic>;
     final imageUrl = product["image_url"] as String?;
-
     final bool vendorHasLocation =
         seller["warehouse_lat"] != null && seller["warehouse_lng"] != null;
+
+    // ✅ Firm name with full fallback chain
+    final String displayName = _getFirmName(seller);
 
     return Positioned.fill(
       child: GestureDetector(
@@ -663,7 +715,18 @@ class _CustomerHomePageState extends State<CustomerHomePage>
               onTap: () {},
               child: Center(
                 child: Container(
-                  margin: const EdgeInsets.fromLTRB(14, 20, 14, 80),
+                  margin: EdgeInsets.fromLTRB(
+                    isDesktop ? 40 : 14,
+                    isDesktop ? 32 : 20,
+                    isDesktop ? 40 : 14,
+                    isDesktop ? 32 : 80,
+                  ),
+                  constraints: BoxConstraints(
+                    maxWidth: isDesktop ? 700 : 600,
+                    maxHeight: isDesktop
+                        ? MediaQuery.of(context).size.height * 0.85
+                        : double.infinity,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.background,
                     borderRadius: BorderRadius.circular(26),
@@ -671,12 +734,13 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(26),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // ── Product image ──
+                        // Image
                         Stack(
                           children: [
                             SizedBox(
-                              height: 210,
+                              height: isDesktop ? 260 : 210,
                               width: double.infinity,
                               child: imageUrl != null && imageUrl.isNotEmpty
                                   ? Image.network(
@@ -749,13 +813,14 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                           ],
                         ),
 
-                        Expanded(
+                        // Scrollable body
+                        Flexible(
                           child: SingleChildScrollView(
                             padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // ── Name & price ──
+                                // Name + price
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisAlignment:
@@ -796,10 +861,9 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     ),
                                   ],
                                 ),
-
                                 const SizedBox(height: 12),
 
-                                // ── Seller info card ──
+                                // ✅ Vendor card — firm_name shown as primary
                                 _card(
                                   child: Row(
                                     children: [
@@ -823,17 +887,19 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
+                                            // ✅ Firm name (Firm name)
                                             Text(
-                                              seller["name"] ?? "",
+                                              displayName,
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.w700,
                                                 fontSize: 14,
                                                 color: AppColors.titleText,
                                               ),
                                             ),
+                                            // Phone as subtitle
                                             if (seller["phone"] != null)
                                               Text(
-                                                seller["phone"],
+                                                seller["phone"] as String,
                                                 style: const TextStyle(
                                                   fontSize: 12,
                                                   color: AppColors.bodyText,
@@ -865,7 +931,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     ],
                                   ),
                                 ),
-
                                 const SizedBox(height: 16),
 
                                 _sectionTitle("Overview"),
@@ -878,7 +943,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     height: 1.5,
                                   ),
                                 ),
-
                                 if ((product["detailed_description"] ?? "")
                                     .isNotEmpty) ...[
                                   const SizedBox(height: 14),
@@ -893,7 +957,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     ),
                                   ),
                                 ],
-
                                 if ((product["specifications"] ?? [])
                                     .isNotEmpty) ...[
                                   const SizedBox(height: 16),
@@ -959,7 +1022,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
 
                                 const SizedBox(height: 18),
 
-                                // ── Delivery charge display ──
+                                // Delivery charge
                                 Container(
                                   padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
@@ -1017,11 +1080,10 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                 ),
 
                                 const SizedBox(height: 20),
-
                                 _sectionTitle("Calculate Your Cost"),
                                 const SizedBox(height: 8),
 
-                                // Location info banner
+                                // Location notice
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 12,
@@ -1070,7 +1132,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
 
                                 const SizedBox(height: 12),
 
-                                // ── Quantity + Distance row ──
+                                // Qty + Distance
                                 Row(
                                   children: [
                                     Expanded(
@@ -1133,8 +1195,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     Expanded(
                                       child: TextField(
                                         controller: distanceController,
-                                        readOnly:
-                                            true, // Auto-filled by _calculateCost
+                                        readOnly: true,
                                         style: const TextStyle(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w500,
@@ -1191,7 +1252,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                 ),
 
                                 const SizedBox(height: 12),
-
                                 _outlinedBtn(
                                   "Calculate",
                                   _calculateCost,
@@ -1210,7 +1270,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                   icon: Icons.shopping_cart_checkout_rounded,
                                 ),
 
-                                // ── Estimated cost result ──
                                 if (totalCost > 0) ...[
                                   const SizedBox(height: 14),
                                   Container(
@@ -1249,7 +1308,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     ),
                                   ),
                                 ],
-
                                 const SizedBox(height: 16),
                               ],
                             ),
@@ -1267,28 +1325,19 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // CALCULATE COST
-  // Fetches customer's default address coordinates.
-  // Uses Haversine formula to compute distance to vendor warehouse.
-  // Fills the read-only distance field and calculates total cost.
-  // ═══════════════════════════════════════════════════════════════
   Future<void> _calculateCost() async {
     final qty = double.tryParse(quantityController.text.trim()) ?? 0;
     if (qty <= 0) {
       _snack("Enter a valid quantity", ok: false);
       return;
     }
-
-    final seller = selectedProduct["seller"];
+    final seller = selectedProduct["seller"] as Map<String, dynamic>;
     final rawVLat = seller["warehouse_lat"];
     final rawVLng = seller["warehouse_lng"];
-
     if (rawVLat == null || rawVLng == null) {
       _snack("Vendor has not set a default address yet", ok: false);
       return;
     }
-
     final double vendorLat;
     final double vendorLng;
     try {
@@ -1298,17 +1347,11 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       _snack("Vendor location data is invalid", ok: false);
       return;
     }
-
-    // Fetch customer's default address with coordinates
     final addressRes = await api.getDefaultAddress();
     if (!addressRes["success"]) {
-      _snack(
-        addressRes["message"] ?? "Set a default address in your profile first",
-        ok: false,
-      );
+      _snack(addressRes["message"] ?? "Set a default address first", ok: false);
       return;
     }
-
     final customer = addressRes["data"];
     final double customerLat;
     final double customerLng;
@@ -1319,87 +1362,54 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       _snack("Your default address has no coordinates. Re-save it.", ok: false);
       return;
     }
-
-    // Calculate distance using Haversine formula
     final double dist = calculateDistance(
       vendorLat,
       vendorLng,
       customerLat,
       customerLng,
     );
-
     final double price = double.parse(
       selectedProduct["price_per_bag"].toString(),
     );
     final double delivery = double.parse(
       selectedProduct["delivery_charge_per_ton"].toString(),
     );
-
     setState(() {
       distanceController.text = dist.toStringAsFixed(2);
       totalCost = (qty * price) + (dist * delivery);
     });
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // ADD TO CART
-  // Calls POST /api/cart with listing_id and quantity_bags.
-  // The quantity entered here is stored in Cart.quantity_bags in DB.
-  // CartPage reads this same quantity_bags — they are always in sync.
-  //
-  // Guards before calling API:
-  //   1. Quantity must be > 0
-  //   2. Distance must be calculated first
-  //   3. Quantity must not exceed available stock
-  // ═══════════════════════════════════════════════════════════════
   Future<void> _addToCart() async {
     final qty = double.tryParse(quantityController.text.trim()) ?? 0;
     final dist = double.tryParse(distanceController.text.trim()) ?? 0;
-
-    // Guard 1: Quantity required
     if (qty <= 0) {
       _snack("Enter a valid quantity", ok: false);
       return;
     }
-
-    // Guard 2: Distance must be calculated first
-    // This ensures customer has a default address set
     if (dist <= 0) {
       _snack("Calculate distance first", ok: false);
       return;
     }
-
     final p = selectedProduct;
     final listingId = p["id"] as int?;
-
     if (listingId == null) {
       _snack("Invalid listing", ok: false);
       return;
     }
-
-    // Guard 3: Check against available stock
     final stock = p["available_stock_bags"] ?? 0;
     if (qty > stock) {
       _snack("Only $stock bags available in stock", ok: false);
       return;
     }
-
-    // Show loading overlay while API call runs
     setState(() => isLoadingDetails = true);
-
-    // POST /api/cart — saves quantity_bags to DB
-    // Backend also does stock check + active listing check + own listing check
     final result = await api.addToCart(
       listingId: listingId,
       quantityBags: qty.toInt(),
     );
-
     setState(() => isLoadingDetails = false);
-
     if (result["success"] == true) {
-      // Increment cart badge count
       setState(() => _cartCount++);
-
       _snack(
         result["message"] ?? "${p["product"]["name"]} added to cart",
         ok: true,
@@ -1410,25 +1420,17 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // REQUEST ORDER
-  // Navigates to the order request page with pre-filled data.
-  // Requires quantity and distance to be filled (Calculate first).
-  // ═══════════════════════════════════════════════════════════════
   void _requestOrder() {
     final qty = double.tryParse(quantityController.text.trim()) ?? 0;
     final dist = double.tryParse(distanceController.text.trim()) ?? 0;
-
     if (qty <= 0 || dist <= 0) {
       _snack("Calculate cost first", ok: false);
       return;
     }
-
     final p = selectedProduct;
     final cost =
         (qty * double.parse(p["price_per_bag"].toString())) +
         (dist * double.parse(p["delivery_charge_per_ton"].toString()));
-
     widget.onSelectView(
       ViewType.requestOrder,
       orderData: {
@@ -1472,7 +1474,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── HELPERS ─────────────────────────────
   Widget _card({required Widget child}) => Container(
     width: double.infinity,
     padding: const EdgeInsets.all(14),
@@ -1577,7 +1578,6 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       emoji = "🎨";
     else if (name.contains("tile") || name.contains("marble"))
       emoji = "🔲";
-
     return Container(
       color: AppColors.surfaceAlt,
       child: Stack(
@@ -1614,7 +1614,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ─────────────────────── BOTTOM NAV ──────────────────────────
+  // ── Bottom nav (mobile only) ──────────────────────────────────────────────
   Widget _bottomNav() {
     return Positioned(
       bottom: 0,
@@ -1645,19 +1645,16 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                   0,
                   () => setState(() => _selectedNavIndex = 0),
                 ),
-
-                // Cart badge uses _cartCount from API, not local list
                 _navBadge(
                   Icons.shopping_cart_rounded,
                   "Cart",
                   1,
-                  _cartCount, // ← real count from GET /api/cart
+                  _cartCount,
                   () {
                     setState(() => _selectedNavIndex = 1);
                     widget.onSelectView(ViewType.cart);
                   },
                 ),
-
                 _navItem(Icons.person_rounded, "Profile", 2, () {
                   setState(() => _selectedNavIndex = 2);
                   widget.onSelectView(ViewType.cutomerProfile);

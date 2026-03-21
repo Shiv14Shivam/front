@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:front/view_type.dart';
 import 'package:front/services/api_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/web_layout.dart'; // ✅ added
 
 class AddAddressPage extends StatefulWidget {
   final Function(ViewType) onSelectView;
@@ -87,7 +88,6 @@ class _AddAddressPageState extends State<AddAddressPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Address added successfully")),
       );
-
       widget.onSelectView(
         widget.isVendor ? ViewType.vendorProfile : ViewType.cutomerProfile,
       );
@@ -98,27 +98,34 @@ class _AddAddressPageState extends State<AddAddressPage> {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ✅ WebLayout used — standalone address form flow, no sidebar needed
+  // ═══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(
-        child: Column(
-          children: [
-            buildHeader(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: buildForm(),
+    return WebLayout(
+      maxWidth: 640, // form looks good at medium width
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(
+          child: Column(
+            children: [
+              buildHeader(),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: buildForm(),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ================= HEADER =================
+  // ── Header ─────────────────────────────────────────────────────────────────
 
   Widget buildHeader() {
     return Container(
@@ -171,7 +178,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
     );
   }
 
-  // ================= FORM =================
+  // ── Form ───────────────────────────────────────────────────────────────────
 
   Widget buildForm() {
     return Form(

@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
-
 import 'package:flutter/foundation.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:front/config/app_config.dart';
@@ -16,10 +15,6 @@ class ApiService {
     printConfig();
   }
 
-  Map<String, String> _authHeaders(String token) {
-    return {..._headers, "Authorization": "Bearer $token"};
-  }
-
   // ================= CONFIG =================
   String get _baseUrl => AppConfig.baseUrl;
 
@@ -27,7 +22,7 @@ class ApiService {
     print('''
 ════════════════════════════════
 API CONFIG
-Platform : ${kIsWeb ? 'Web' : Platform.operatingSystem}
+Platform : ${kIsWeb ? 'Web' : 'Native'}
 Base URL : $_baseUrl
 ════════════════════════════════
 ''');
@@ -36,8 +31,32 @@ Base URL : $_baseUrl
   Map<String, String> get _headers => {
     "Content-Type": "application/json",
     "Accept": "application/json",
-    "Host": "sandbackend.test",
+    if (!kIsWeb) "Host": "sandbackend.test",
   };
+
+  Map<String, String> _authHeaders(String token) {
+    return {..._headers, "Authorization": "Bearer $token"};
+  }
+
+  // ================= STORAGE =================
+  Future<void> _saveToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("auth_token", token);
+  }
+
+  Future<void> _saveUser(Map<String, dynamic> user) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString("user_data", jsonEncode(user));
+  }
+
+  Future<String?> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString("auth_token");
+  }
+
+  Future<bool> isLoggedIn() async {
+    return (await getToken()) != null;
+  }
 
   // ================= LOGIN =================
   Future<Map<String, dynamic>> login(
@@ -94,26 +113,6 @@ Base URL : $_baseUrl
     } catch (e) {
       return {"success": false, "message": "Network error"};
     }
-  }
-
-  // ================= STORAGE =================
-  Future<void> _saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString("auth_token", token);
-  }
-
-  Future<void> _saveUser(Map<String, dynamic> user) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString("user_data", jsonEncode(user));
-  }
-
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString("auth_token");
-  }
-
-  Future<bool> isLoggedIn() async {
-    return (await getToken()) != null;
   }
 
   // ================= REGISTER =================
@@ -179,9 +178,8 @@ Base URL : $_baseUrl
   Future<Map<String, dynamic>> getProfile() async {
     try {
       final token = await getToken();
-      if (token == null) {
+      if (token == null)
         return {"success": false, "message": "Not authenticated"};
-      }
 
       final response = await http
           .get(Uri.parse("$_baseUrl/profile"), headers: _authHeaders(token))
@@ -213,9 +211,8 @@ Base URL : $_baseUrl
   }) async {
     try {
       final token = await getToken();
-      if (token == null) {
+      if (token == null)
         return {"success": false, "message": "Not authenticated"};
-      }
 
       final Map<String, dynamic> body = {
         "name": name,
@@ -248,7 +245,6 @@ Base URL : $_baseUrl
       return {
         "success": false,
         "message": data["message"] ?? "Profile update failed",
-        "statusCode": response.statusCode,
       };
     } on TimeoutException {
       return {"success": false, "message": "Server timeout"};
@@ -261,9 +257,8 @@ Base URL : $_baseUrl
   Future<Map<String, dynamic>> logout() async {
     try {
       final token = await getToken();
-      if (token == null) {
+      if (token == null)
         return {"success": false, "message": "Not authenticated"};
-      }
 
       final response = await http
           .post(Uri.parse("$_baseUrl/logout"), headers: _authHeaders(token))
@@ -288,85 +283,12 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= UPDATE ADDRESS =================
-  Future<Map<String, dynamic>> updateAddress(
-    int id, {
-    required String label,
-    required String line1,
-    String? line2,
-    required String city,
-    required String state,
-    required String pincode,
-    required bool isDefault,
-  }) async {
-    try {
-      final token = await getToken();
-      if (token == null) {
-        return {"success": false, "message": "Not authenticated"};
-      }
-
-      final response = await http.put(
-        Uri.parse("$_baseUrl/addresses/$id"),
-        headers: _authHeaders(token),
-        body: jsonEncode({
-          "label": label,
-          "address_line_1": line1,
-          "address_line_2": line2,
-          "city": city,
-          "state": state,
-          "pincode": pincode,
-          "is_default": isDefault,
-        }),
-      );
-
-      if (response.statusCode == 200) return {"success": true};
-      return {"success": false};
-    } catch (e) {
-      return {"success": false, "message": "Network error"};
-    }
-  }
-
-  // ================= DELETE ADDRESS =================
-  Future<bool> deleteAddress(int id) async {
-    try {
-      final token = await getToken();
-      if (token == null) return false;
-
-      final response = await http.delete(
-        Uri.parse("$_baseUrl/addresses/$id"),
-        headers: _authHeaders(token),
-      );
-
-      return response.statusCode == 200;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // ================= SET DEFAULT ADDRESS =================
-  Future<bool> setDefaultAddress(int id) async {
-    try {
-      final token = await getToken();
-      if (token == null) return false;
-
-      final response = await http.post(
-        Uri.parse("$_baseUrl/addresses/$id/default"),
-        headers: _authHeaders(token),
-      );
-
-      return response.statusCode == 200;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // ================= GET ADDRESSES =================
+  // ================= ADDRESSES =================
   Future<Map<String, dynamic>> getAddresses() async {
     try {
       final token = await getToken();
-      if (token == null) {
+      if (token == null)
         return {"success": false, "message": "Not authenticated"};
-      }
 
       final response = await http.get(
         Uri.parse("$_baseUrl/addresses"),
@@ -398,7 +320,6 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= ADD ADDRESS =================
   Future<Map<String, dynamic>> addAddress({
     required String label,
     required String line1,
@@ -410,9 +331,8 @@ Base URL : $_baseUrl
   }) async {
     try {
       final token = await getToken();
-      if (token == null) {
+      if (token == null)
         return {"success": false, "message": "Not authenticated"};
-      }
 
       final response = await http.post(
         Uri.parse("$_baseUrl/addresses"),
@@ -428,9 +348,8 @@ Base URL : $_baseUrl
         }),
       );
 
-      if (response.body.isEmpty) {
+      if (response.body.isEmpty)
         return {"success": false, "message": "Empty response from server"};
-      }
 
       final data = jsonDecode(response.body);
 
@@ -447,15 +366,75 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= GET DEFAULT ADDRESS =================
+  Future<Map<String, dynamic>> updateAddress(
+    int id, {
+    required String label,
+    required String line1,
+    String? line2,
+    required String city,
+    required String state,
+    required String pincode,
+    required bool isDefault,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final response = await http.put(
+        Uri.parse("$_baseUrl/addresses/$id"),
+        headers: _authHeaders(token),
+        body: jsonEncode({
+          "label": label,
+          "address_line_1": line1,
+          "address_line_2": line2,
+          "city": city,
+          "state": state,
+          "pincode": pincode,
+          "is_default": isDefault,
+        }),
+      );
+
+      if (response.statusCode == 200) return {"success": true};
+      return {"success": false};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  Future<bool> deleteAddress(int id) async {
+    try {
+      final token = await getToken();
+      if (token == null) return false;
+      final response = await http.delete(
+        Uri.parse("$_baseUrl/addresses/$id"),
+        headers: _authHeaders(token),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> setDefaultAddress(int id) async {
+    try {
+      final token = await getToken();
+      if (token == null) return false;
+      final response = await http.post(
+        Uri.parse("$_baseUrl/addresses/$id/default"),
+        headers: _authHeaders(token),
+      );
+      return response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> getDefaultAddress() async {
     try {
       final token = await getToken();
-      if (token == null) {
+      if (token == null)
         return {"success": false, "message": "Not authenticated"};
-      }
-
-      print("🔑 Token: $token");
 
       final response = await http
           .get(
@@ -464,13 +443,8 @@ Base URL : $_baseUrl
           )
           .timeout(const Duration(seconds: 15));
 
-      print(
-        "📍 Default address response: ${response.statusCode} ${response.body}",
-      );
-
-      if (response.body.isEmpty) {
+      if (response.body.isEmpty)
         return {"success": false, "message": "No default address found"};
-      }
 
       final data = jsonDecode(response.body);
 
@@ -495,58 +469,46 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= GET CATEGORIES =================
+  // ================= CATEGORIES / BRANDS / PRODUCTS =================
   Future<List<dynamic>> getCategories() async {
     final response = await http.get(
       Uri.parse("$_baseUrl/categories"),
       headers: _headers,
     );
-
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       return data["data"];
     }
-
     throw Exception("Failed to load categories");
   }
 
-  // ================= GET BRANDS =================
   Future<List<dynamic>> getBrands(int categoryId) async {
     final token = await getToken();
-
     final response = await http.get(
       Uri.parse("$_baseUrl/categories/$categoryId/brands"),
       headers: _authHeaders(token!),
     );
-
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       return data["data"];
     }
-
-    print("Brand error: ${response.statusCode} ${response.body}");
     throw Exception("Failed to load brands");
   }
 
-  // ================= GET PRODUCTS =================
   Future<List<dynamic>> getProducts(int brandId) async {
     final token = await getToken();
-
     final response = await http.get(
       Uri.parse("$_baseUrl/brands/$brandId/products"),
       headers: _authHeaders(token!),
     );
-
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       return data["data"];
     }
-
-    print("Product error: ${response.statusCode} ${response.body}");
     throw Exception("Failed to load products");
   }
 
-  // ================= CREATE LISTING =================
+  // ================= LISTINGS =================
   Future<Map<String, dynamic>> createListing({
     required int categoryId,
     required int brandId,
@@ -556,7 +518,6 @@ Base URL : $_baseUrl
     required int stock,
   }) async {
     final token = await getToken();
-
     final response = await http.post(
       Uri.parse("$_baseUrl/seller/listings"),
       headers: _authHeaders(token!),
@@ -569,49 +530,39 @@ Base URL : $_baseUrl
         "available_stock_bags": stock,
       }),
     );
-
     final data = jsonDecode(response.body);
-
-    if (response.statusCode == 201) {
-      return {"success": true, "data": data};
-    }
-
+    if (response.statusCode == 201) return {"success": true, "data": data};
     return {
       "success": false,
       "message": data["message"] ?? "Failed to create listing",
     };
   }
 
-  // ================= GET MARKETPLACE LISTINGS =================
   Future<List<dynamic>> getMarketplaceListings() async {
     final response = await http.get(
       Uri.parse("$_baseUrl/marketplace"),
       headers: _headers,
     );
-
     if (response.statusCode == 200) {
       final decoded = jsonDecode(response.body);
       return decoded["data"];
     }
-
     throw Exception("Failed to load marketplace listings");
   }
 
-  // ================= GET CART =================
+  // ================= CART =================
   Future<Map<String, dynamic>> getCart() async {
     try {
       final token = await getToken();
-      if (token == null) {
+      if (token == null)
         return {"success": false, "message": "Not authenticated"};
-      }
 
       final response = await http
           .get(Uri.parse("$_baseUrl/cart"), headers: _authHeaders(token))
           .timeout(const Duration(seconds: 15));
 
-      if (response.body.isEmpty) {
+      if (response.body.isEmpty)
         return {"success": false, "message": "Empty response from server"};
-      }
 
       final data = jsonDecode(response.body);
 
@@ -634,16 +585,14 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= ADD TO CART =================
   Future<Map<String, dynamic>> addToCart({
     required int listingId,
     required int quantityBags,
   }) async {
     try {
       final token = await getToken();
-      if (token == null) {
+      if (token == null)
         return {"success": false, "message": "Not authenticated"};
-      }
 
       final response = await http
           .post(
@@ -656,9 +605,8 @@ Base URL : $_baseUrl
           )
           .timeout(const Duration(seconds: 15));
 
-      if (response.body.isEmpty) {
+      if (response.body.isEmpty)
         return {"success": false, "message": "Empty response from server"};
-      }
 
       final data = jsonDecode(response.body);
 
@@ -681,13 +629,11 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= UPDATE CART ITEM =================
   Future<Map<String, dynamic>> updateCartItem(int id, int quantityBags) async {
     try {
       final token = await getToken();
-      if (token == null) {
+      if (token == null)
         return {"success": false, "message": "Not authenticated"};
-      }
 
       final response = await http
           .put(
@@ -697,15 +643,13 @@ Base URL : $_baseUrl
           )
           .timeout(const Duration(seconds: 15));
 
-      if (response.body.isEmpty) {
+      if (response.body.isEmpty)
         return {"success": false, "message": "Empty response from server"};
-      }
 
       final data = jsonDecode(response.body);
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200)
         return {"success": true, "data": data["data"]};
-      }
 
       return {"success": false, "message": data["message"] ?? "Update failed"};
     } on TimeoutException {
@@ -715,46 +659,36 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= REMOVE CART ITEM =================
   Future<bool> removeCartItem(int id) async {
     try {
       final token = await getToken();
       if (token == null) return false;
-
       final response = await http
           .delete(Uri.parse("$_baseUrl/cart/$id"), headers: _authHeaders(token))
           .timeout(const Duration(seconds: 15));
-
       return response.statusCode == 200;
-    } on TimeoutException {
-      return false;
     } catch (e) {
       return false;
     }
   }
 
-  // ================= CLEAR CART =================
   Future<bool> clearCart() async {
     try {
       final token = await getToken();
       if (token == null) return false;
-
       final response = await http
           .delete(
             Uri.parse("$_baseUrl/cart/clear"),
             headers: _authHeaders(token),
           )
           .timeout(const Duration(seconds: 15));
-
       return response.statusCode == 200;
-    } on TimeoutException {
-      return false;
     } catch (e) {
       return false;
     }
   }
 
-  // ================= GET VENDOR ORDERS =================
+  // ================= VENDOR ORDERS =================
   Future<Map<String, dynamic>> getVendorOrders() async {
     try {
       final token = await getToken();
@@ -787,7 +721,6 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= ACCEPT VENDOR ORDER =================
   Future<Map<String, dynamic>> acceptVendorOrder(int orderId) async {
     try {
       final token = await getToken();
@@ -815,7 +748,6 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= DECLINE VENDOR ORDER =================
   Future<Map<String, dynamic>> declineVendorOrder(
     int orderId, {
     String? reason,
@@ -849,7 +781,7 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= PLACE DIRECT ORDER =================
+  // ================= DIRECT ORDER =================
   Future<Map<String, dynamic>> placeDirectOrder({
     required int listingId,
     required int quantityBags,
@@ -858,9 +790,8 @@ Base URL : $_baseUrl
   }) async {
     try {
       final token = await getToken();
-      if (token == null) {
+      if (token == null)
         return {"success": false, "message": "Not authenticated"};
-      }
 
       final response = await http
           .post(
@@ -877,9 +808,7 @@ Base URL : $_baseUrl
 
       final data = jsonDecode(response.body);
 
-      if (response.statusCode == 201) {
-        return {"success": true, "data": data};
-      }
+      if (response.statusCode == 201) return {"success": true, "data": data};
 
       return {
         "success": false,
@@ -892,8 +821,7 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= GET VENDOR INVENTORY =================
-  // GET /api/vendor/inventory?status=active|inactive|pending|rejected
+  // ================= VENDOR INVENTORY =================
   Future<Map<String, dynamic>> getVendorInventory({String? status}) async {
     try {
       final token = await getToken();
@@ -933,9 +861,6 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= RESTOCK LISTING =================
-  // PATCH /api/vendor/inventory/{id}/restock
-  // Body: { "add_bags": int }
   Future<Map<String, dynamic>> restockListing(
     int listingId,
     int addBags,
@@ -973,9 +898,6 @@ Base URL : $_baseUrl
     }
   }
 
-  // ================= UPDATE LISTING PRICES =================
-  // PATCH /api/vendor/inventory/{id}/prices
-  // Body: { "price_per_bag": double, "delivery_charge_per_ton": double }
   Future<Map<String, dynamic>> updateListingPrices(
     int listingId, {
     required double pricePerBag,
@@ -1013,6 +935,201 @@ Base URL : $_baseUrl
       return {
         "success": false,
         "message": data["message"] ?? "Price update failed",
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // ================= NOTIFICATIONS =================
+  Future<Map<String, dynamic>> getNotifications() async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/notifications'),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty)
+        return {"success": false, "message": "Empty response"};
+
+      final decoded = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        final list = (decoded is Map && decoded.containsKey('data'))
+            ? decoded['data'] as List
+            : (decoded is List ? decoded : []);
+        return {"success": true, "data": list};
+      }
+
+      return {
+        "success": false,
+        "message": (decoded as Map)['message'] ?? 'Failed',
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  Future<void> markNotificationRead(String notificationId) async {
+    try {
+      final token = await getToken();
+      if (token == null) return;
+      await http
+          .post(
+            Uri.parse('$_baseUrl/notifications/$notificationId/read'),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {}
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    try {
+      final token = await getToken();
+      if (token == null) return;
+      await http
+          .post(
+            Uri.parse('$_baseUrl/notifications/read-all'),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 10));
+    } catch (_) {}
+  }
+
+  // ─── Unread count — used by bell icon to decide whether to glow ───────────
+  Future<int> getUnreadNotificationCount() async {
+    try {
+      final token = await getToken();
+      if (token == null) return 0;
+
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/notifications/unread-count'),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return (data['count'] as int?) ?? 0;
+      }
+      return 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  // ================= PAYMENT =================
+
+  // POST /api/orders/{orderItemId}/pay-now
+  Future<Map<String, dynamic>> payNow(int orderItemId) async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/orders/$orderItemId/pay-now'),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty)
+        return {"success": false, "message": "Empty response"};
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {
+          "success": true,
+          "message": data["message"] ?? "Payment successful!",
+          "data": data["data"],
+        };
+      }
+
+      return {"success": false, "message": data["message"] ?? "Payment failed"};
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // POST /api/orders/{orderItemId}/pay-later
+  Future<Map<String, dynamic>> payLater(int orderItemId) async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/orders/$orderItemId/pay-later'),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty)
+        return {"success": false, "message": "Empty response"};
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {
+          "success": true,
+          "message": data["message"] ?? "Pay later set.",
+          "data": data["data"],
+        };
+      }
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to set pay later",
+      };
+    } on TimeoutException {
+      return {"success": false, "message": "Server timeout"};
+    } catch (e) {
+      return {"success": false, "message": "Network error"};
+    }
+  }
+
+  // GET /api/orders/{orderItemId}/payment-status
+  Future<Map<String, dynamic>> getPaymentStatus(int orderItemId) async {
+    try {
+      final token = await getToken();
+      if (token == null)
+        return {"success": false, "message": "Not authenticated"};
+
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/orders/$orderItemId/payment-status'),
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.body.isEmpty)
+        return {"success": false, "message": "Empty response"};
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {"success": true, "data": data["data"]};
+      }
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to get payment status",
       };
     } on TimeoutException {
       return {"success": false, "message": "Server timeout"};
