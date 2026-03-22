@@ -6,30 +6,32 @@ import 'map_picker.dart';
 import '../theme/app_colors.dart';
 import '../widgets/web_layout.dart';
 
-class AddAddressPage extends StatefulWidget {
+class EditAddressPage extends StatefulWidget {
   final Function(ViewType) onSelectView;
   final bool isVendor;
+  final Map<String, dynamic> address;
 
-  const AddAddressPage({
+  const EditAddressPage({
     super.key,
     required this.onSelectView,
     required this.isVendor,
+    required this.address,
   });
 
   @override
-  State<AddAddressPage> createState() => _AddAddressPageState();
+  State<EditAddressPage> createState() => _EditAddressPageState();
 }
 
-class _AddAddressPageState extends State<AddAddressPage> {
+class _EditAddressPageState extends State<EditAddressPage> {
   final _formKey = GlobalKey<FormState>();
   final ApiService _api = ApiService();
 
-  final labelController = TextEditingController();
-  final line1Controller = TextEditingController();
-  final line2Controller = TextEditingController();
-  final cityController = TextEditingController();
-  final stateController = TextEditingController();
-  final pincodeController = TextEditingController();
+  late final TextEditingController labelController;
+  late final TextEditingController line1Controller;
+  late final TextEditingController line2Controller;
+  late final TextEditingController cityController;
+  late final TextEditingController stateController;
+  late final TextEditingController pincodeController;
 
   bool isDefault = false;
   bool isLoading = false;
@@ -42,6 +44,17 @@ class _AddAddressPageState extends State<AddAddressPage> {
   @override
   void initState() {
     super.initState();
+    final a = widget.address;
+    labelController = TextEditingController(text: a['label'] ?? '');
+    line1Controller = TextEditingController(text: a['address_line_1'] ?? '');
+    line2Controller = TextEditingController(text: a['address_line_2'] ?? '');
+    cityController = TextEditingController(text: a['city'] ?? '');
+    stateController = TextEditingController(text: a['state'] ?? '');
+    pincodeController = TextEditingController(text: a['pincode'] ?? '');
+    isDefault = a['is_default'] == true || a['is_default'] == 1;
+    _lat = double.tryParse(a['latitude']?.toString() ?? '');
+    _lng = double.tryParse(a['longitude']?.toString() ?? '');
+
     quickLabels = widget.isVendor
         ? [
             'Main Warehouse',
@@ -108,7 +121,8 @@ class _AddAddressPageState extends State<AddAddressPage> {
 
     setState(() => isLoading = true);
 
-    final result = await _api.addAddress(
+    final result = await _api.updateAddress(
+      widget.address['id'] as int,
       label: labelController.text.trim(),
       line1: line1Controller.text.trim(),
       line2: line2Controller.text.trim().isEmpty
@@ -127,7 +141,10 @@ class _AddAddressPageState extends State<AddAddressPage> {
     if (result['success'] == true) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Address added successfully')),
+          const SnackBar(
+            content: Text('Address updated successfully'),
+            backgroundColor: Colors.green,
+          ),
         );
         widget.onSelectView(
           widget.isVendor ? ViewType.vendorProfile : ViewType.cutomerProfile,
@@ -136,7 +153,10 @@ class _AddAddressPageState extends State<AddAddressPage> {
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'] ?? 'Failed to add address')),
+          SnackBar(
+            content: Text(result['message'] ?? 'Failed to update address'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     }
@@ -179,7 +199,11 @@ class _AddAddressPageState extends State<AddAddressPage> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.location_on, color: Colors.white, size: 28),
+          const Icon(
+            Icons.edit_location_alt_outlined,
+            color: Colors.white,
+            size: 28,
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -187,8 +211,8 @@ class _AddAddressPageState extends State<AddAddressPage> {
               children: [
                 Text(
                   widget.isVendor
-                      ? 'Add Business Location'
-                      : 'Add Delivery Address',
+                      ? 'Edit Business Location'
+                      : 'Edit Delivery Address',
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -196,7 +220,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
                   ),
                 ),
                 const Text(
-                  'Fill in the details below',
+                  'Update the details below',
                   style: TextStyle(color: Colors.white70),
                 ),
               ],
@@ -280,7 +304,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
                           ),
                         )
                       : const Text(
-                          'Save Address',
+                          'Update Address',
                           style: TextStyle(color: Colors.white),
                         ),
                 ),
@@ -355,7 +379,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
                     pinned
                         ? '${_lat!.toStringAsFixed(5)},  '
                               '${_lng!.toStringAsFixed(5)}'
-                        : 'Required — tap to open map and drop a pin',
+                        : 'Tap to open map — re-pin to update location',
                     style: TextStyle(
                       fontSize: 12,
                       color: pinned

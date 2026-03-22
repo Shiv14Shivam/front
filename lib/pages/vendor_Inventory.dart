@@ -16,11 +16,11 @@ class _Listing {
   final String brandName;
   final String categoryName;
   final String? imageUrl;
-  final double pricePerBag;
+  final double pricePerunit;
   final double deliveryChargePerTon;
   final int availableStock;
   final int totalAccepted;
-  final int pendingBags;
+  final int pendingunit;
   final String status;
   final String? rejectionReason;
 
@@ -30,11 +30,11 @@ class _Listing {
     required this.brandName,
     required this.categoryName,
     this.imageUrl,
-    required this.pricePerBag,
+    required this.pricePerunit,
     required this.deliveryChargePerTon,
     required this.availableStock,
     required this.totalAccepted,
-    required this.pendingBags,
+    required this.pendingunit,
     required this.status,
     this.rejectionReason,
   });
@@ -50,14 +50,14 @@ class _Listing {
       brandName: (brand['name'] ?? '-') as String,
       categoryName: (category['name'] ?? '-') as String,
       imageUrl: product['image_url'] as String?,
-      pricePerBag: double.tryParse('${j['price_per_bag']}') ?? 0,
+      pricePerunit: double.tryParse('${j['price_per_unit']}') ?? 0,
       deliveryChargePerTon:
-          double.tryParse('${j['delivery_charge_per_ton']}') ?? 0,
+          double.tryParse('${j['delivery_charge_per_km']}') ?? 0,
       availableStock:
-          (inv['available_stock_bags'] ?? j['available_stock_bags'] ?? 0)
+          (inv['available_stock_unit'] ?? j['available_stock_unit'] ?? 0)
               as int,
-      totalAccepted: (inv['total_accepted_bags'] ?? 0) as int,
-      pendingBags: (inv['pending_request_bags'] ?? 0) as int,
+      totalAccepted: (inv['total_accepted_unit'] ?? 0) as int,
+      pendingunit: (inv['pending_request_unit'] ?? 0) as int,
       status: (j['status'] ?? 'inactive') as String,
       rejectionReason: j['rejection_reason'] as String?,
     );
@@ -72,11 +72,11 @@ class _Listing {
     brandName: brandName,
     categoryName: categoryName,
     imageUrl: imageUrl,
-    pricePerBag: pricePerBag,
+    pricePerunit: pricePerunit,
     deliveryChargePerTon: deliveryChargePerTon,
     availableStock: s,
     totalAccepted: totalAccepted,
-    pendingBags: pendingBags,
+    pendingunit: pendingunit,
     status: (s > 0 && status == 'inactive') ? 'active' : status,
     rejectionReason: rejectionReason,
   );
@@ -87,11 +87,11 @@ class _Listing {
     brandName: brandName,
     categoryName: categoryName,
     imageUrl: imageUrl,
-    pricePerBag: ppb,
+    pricePerunit: ppb,
     deliveryChargePerTon: dcpt,
     availableStock: availableStock,
     totalAccepted: totalAccepted,
-    pendingBags: pendingBags,
+    pendingunit: pendingunit,
     status: status,
     rejectionReason: rejectionReason,
   );
@@ -243,22 +243,22 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
     return base;
   }
 
-  Future<void> _restock(_Listing listing, int bags) async {
-    final optimistic = listing.withStock(listing.availableStock + bags);
+  Future<void> _restock(_Listing listing, int unit) async {
+    final optimistic = listing.withStock(listing.availableStock + unit);
     setState(() {
       final i = _listings.indexWhere((l) => l.id == listing.id);
       if (i != -1) _listings[i] = optimistic;
     });
-    final res = await _api.restockListing(listing.id, bags);
+    final res = await _api.restockListing(listing.id, unit);
     if (!mounted) return;
     if (res['success'] == true) {
       final confirmed =
-          (res['new_stock_bags'] as int?) ?? optimistic.availableStock;
+          (res['new_stock_unit'] as int?) ?? optimistic.availableStock;
       setState(() {
         final i = _listings.indexWhere((l) => l.id == listing.id);
         if (i != -1) _listings[i] = _listings[i].withStock(confirmed);
       });
-      _snack('✅ Restocked ${listing.productName} +$bags bags', true);
+      _snack('✅ Restocked ${listing.productName} +$unit unit', true);
     } else {
       setState(() {
         final i = _listings.indexWhere((l) => l.id == listing.id);
@@ -276,14 +276,14 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
     });
     final res = await _api.updateListingPrices(
       listing.id,
-      pricePerBag: ppb,
+      pricePerunit: ppb,
       deliveryChargePerTon: dcpt,
     );
     if (!mounted) return;
     if (res['success'] == true) {
-      final confirmedPpb = double.tryParse('${res['price_per_bag']}') ?? ppb;
+      final confirmedPpb = double.tryParse('${res['price_per_unit']}') ?? ppb;
       final confirmedDcpt =
-          double.tryParse('${res['delivery_charge_per_ton']}') ?? dcpt;
+          double.tryParse('${res['delivery_charge_per_km']}') ?? dcpt;
       setState(() {
         final i = _listings.indexWhere((l) => l.id == listing.id);
         if (i != -1)
@@ -627,7 +627,7 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
           padding: const EdgeInsets.only(bottom: 12),
           child: _Card(
             listing: items[i],
-            onRestock: (bags) => _restock(items[i], bags),
+            onRestock: (unit) => _restock(items[i], unit),
             onUpdatePrices: (ppb, dcpt) => _updatePrices(items[i], ppb, dcpt),
           ),
         ),
@@ -658,7 +658,7 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
       ),
       itemBuilder: (_, i) => _Card(
         listing: items[i],
-        onRestock: (bags) => _restock(items[i], bags),
+        onRestock: (unit) => _restock(items[i], unit),
         onUpdatePrices: (ppb, dcpt) => _updatePrices(items[i], ppb, dcpt),
       ),
     );
@@ -1010,7 +1010,7 @@ class _VendorInventoryPageState extends State<VendorInventoryPage>
 
 class _Card extends StatelessWidget {
   final _Listing listing;
-  final void Function(int bags) onRestock;
+  final void Function(int unit) onRestock;
   final void Function(double, double) onUpdatePrices;
 
   const _Card({
@@ -1101,7 +1101,7 @@ class _Card extends StatelessWidget {
                       Row(
                         children: [
                           Text(
-                            '₹${l.pricePerBag.toStringAsFixed(0)}',
+                            '₹${l.pricePerunit.toStringAsFixed(0)}',
                             style: const TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
@@ -1109,7 +1109,7 @@ class _Card extends StatelessWidget {
                             ),
                           ),
                           const Text(
-                            ' / bag',
+                            ' / unit',
                             style: TextStyle(
                               fontSize: 11,
                               color: AppColors.subtleText,
@@ -1255,7 +1255,7 @@ class _Card extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${l.availableStock} bags',
+                    '${l.availableStock} unit',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -1271,13 +1271,13 @@ class _Card extends StatelessWidget {
                         color: AppColors.subtleText,
                       ),
                     ),
-                  if (l.pendingBags > 0) ...[
+                  if (l.pendingunit > 0) ...[
                     const Text(
                       '  ·  ',
                       style: TextStyle(color: AppColors.subtleText),
                     ),
                     Text(
-                      '${l.pendingBags} pending',
+                      '${l.pendingunit} pending',
                       style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.subtleText,
@@ -1484,7 +1484,7 @@ class _RestockSheetState extends State<_RestockSheet> {
               ),
             ),
             Text(
-              'Current: ${widget.listing.availableStock} bags',
+              'Current: ${widget.listing.availableStock} unit',
               style: const TextStyle(fontSize: 12, color: AppColors.subtleText),
             ),
             const SizedBox(height: 20),
@@ -1499,7 +1499,7 @@ class _RestockSheetState extends State<_RestockSheet> {
                 color: AppColors.titleText,
               ),
               decoration: InputDecoration(
-                suffixText: 'bags',
+                suffixText: 'unit',
                 suffixStyle: const TextStyle(
                   fontSize: 14,
                   color: AppColors.subtleText,
@@ -1641,7 +1641,7 @@ class _EditPriceSheetState extends State<_EditPriceSheet> {
   void initState() {
     super.initState();
     _ppbCtrl = TextEditingController(
-      text: widget.listing.pricePerBag.toStringAsFixed(0),
+      text: widget.listing.pricePerunit.toStringAsFixed(0),
     );
     _dcptCtrl = TextEditingController(
       text: widget.listing.deliveryChargePerTon.toStringAsFixed(0),
@@ -1675,7 +1675,7 @@ class _EditPriceSheetState extends State<_EditPriceSheet> {
     final ppb = double.tryParse(_ppbCtrl.text);
     final dcpt = double.tryParse(_dcptCtrl.text);
     if (ppb == null || dcpt == null) return;
-    if (ppb == widget.listing.pricePerBag &&
+    if (ppb == widget.listing.pricePerunit &&
         dcpt == widget.listing.deliveryChargePerTon) {
       Navigator.pop(context);
       return;
@@ -1730,7 +1730,7 @@ class _EditPriceSheetState extends State<_EditPriceSheet> {
             ),
             const SizedBox(height: 20),
             const Text(
-              'Price per bag',
+              'Price per unit',
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -1759,7 +1759,7 @@ class _EditPriceSheetState extends State<_EditPriceSheet> {
                   fontWeight: FontWeight.w700,
                   color: AppColors.primary,
                 ),
-                suffixText: '/ bag',
+                suffixText: '/ unit',
                 suffixStyle: const TextStyle(
                   fontSize: 13,
                   color: AppColors.subtleText,

@@ -76,7 +76,7 @@ class _RequestOrderPageState extends State<RequestOrderPage> {
 
     final result = await _apiService.placeDirectOrder(
       listingId: widget.listing["id"],
-      quantityBags: widget.quantity.toInt(),
+      quantityunit: widget.quantity.toInt(),
       deliveryAddressId: selectedAddress["id"],
       notes: noteController.text.trim(),
     );
@@ -118,14 +118,14 @@ class _RequestOrderPageState extends State<RequestOrderPage> {
     final product = widget.listing["product"];
     final seller = widget.listing["seller"];
 
-    final pricePerBag =
-        double.tryParse(widget.listing["price_per_bag"].toString()) ?? 0;
+    final pricePerunit =
+        double.tryParse(widget.listing["price_per_unit"].toString()) ?? 0;
 
     final deliveryCharge =
-        double.tryParse(widget.listing["delivery_charge_per_ton"].toString()) ??
+        double.tryParse(widget.listing["delivery_charge_per_km"].toString()) ??
         0;
 
-    final materialCost = widget.quantity * pricePerBag;
+    final materialCost = widget.quantity * pricePerunit;
     final deliveryCost = widget.distance * deliveryCharge;
 
     return WebLayout(
@@ -206,10 +206,10 @@ class _RequestOrderPageState extends State<RequestOrderPage> {
 
                     _summaryRow(
                       "Quantity",
-                      "${widget.quantity} ${product["unit"] ?? "bags"}",
+                      "${widget.quantity} ${product["unit"] ?? "unit"}",
                     ),
                     _summaryRow("Distance", "${widget.distance} km"),
-                    _summaryRow("Price per bag", "₹$pricePerBag"),
+                    _summaryRow("Price per unit", "₹$pricePerunit"),
                     _summaryRow(
                       "Material Cost",
                       "₹${materialCost.toStringAsFixed(2)}",

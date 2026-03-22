@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:front/pages/primary.dart';
+
 import 'package:front/pages/vendor_profile.dart';
 
 import 'view_type.dart';
@@ -8,9 +8,9 @@ import 'pages/login_page.dart';
 import 'pages/customerHome.dart';
 import 'pages/signup.dart';
 import 'pages/vendorHome.dart';
-
 import 'pages/customer_profile.dart';
 import 'pages/address_form.dart';
+import 'pages/edit_address.dart'; // ← NEW
 import 'pages/ListNewProductPage.dart';
 import 'pages/request_order_page.dart';
 import 'pages/cart_page.dart';
@@ -30,11 +30,13 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  ViewType currentView = ViewType.primary;
+  ViewType currentView = ViewType.landing;
 
-  /// 🔑 GLOBAL ROLE STATE
   String selectedUserType = 'customer';
   Map<String, dynamic>? pendingOrderData;
+
+  // Holds the address being edited — set by profile pages before navigating
+  Map<String, dynamic>? pendingEditAddress; // ← NEW
 
   void setView(
     ViewType view, {
@@ -43,12 +45,8 @@ class _MyAppState extends State<MyApp> {
   }) {
     setState(() {
       currentView = view;
-      if (userType != null) {
-        selectedUserType = userType;
-      }
-      if (orderData != null) {
-        pendingOrderData = orderData;
-      }
+      if (userType != null) selectedUserType = userType;
+      if (orderData != null) pendingOrderData = orderData;
     });
   }
 
@@ -58,7 +56,11 @@ class _MyAppState extends State<MyApp> {
 
     switch (currentView) {
       case ViewType.landing:
-        child = RoleSelectionScreen(onSelectView: setView);
+        child = SandHereWebsite(
+          onSelectView: (viewType, {userType}) {
+            setView(ViewType.login, userType: userType);
+          },
+        );
         break;
 
       case ViewType.login:
@@ -80,16 +82,26 @@ class _MyAppState extends State<MyApp> {
         child = VendorHomePage(onSelectView: setView);
         break;
 
-      case ViewType.primary:
-        child = PrimaryPage(onSelectView: setView);
-        break;
-
       case ViewType.cutomerProfile:
-        child = CustomerProfilePage(onSelectView: setView);
+        child = CustomerProfilePage(
+          onSelectView: setView,
+          onEditAddress: (address) {
+            // ← NEW callback
+            setState(() => pendingEditAddress = address);
+            setView(ViewType.editAddress);
+          },
+        );
         break;
 
       case ViewType.vendorProfile:
-        child = VendorProfilePage(onSelectView: setView);
+        child = VendorProfilePage(
+          onSelectView: setView,
+          onEditAddress: (address) {
+            // ← NEW callback
+            setState(() => pendingEditAddress = address);
+            setView(ViewType.editAddress);
+          },
+        );
         break;
 
       case ViewType.addressForm:
@@ -99,26 +111,52 @@ class _MyAppState extends State<MyApp> {
         );
         break;
 
+      // ── NEW ───────────────────────────────────────────────────────────────
+      case ViewType.editAddress:
+        if (pendingEditAddress == null) {
+          // Safety fallback — should never happen
+          child = selectedUserType == 'vendor'
+              ? VendorProfilePage(
+                  onSelectView: setView,
+                  onEditAddress: (a) {
+                    setState(() => pendingEditAddress = a);
+                    setView(ViewType.editAddress);
+                  },
+                )
+              : CustomerProfilePage(
+                  onSelectView: setView,
+                  onEditAddress: (a) {
+                    setState(() => pendingEditAddress = a);
+                    setView(ViewType.editAddress);
+                  },
+                );
+        } else {
+          child = EditAddressPage(
+            onSelectView: setView,
+            isVendor: selectedUserType == 'vendor',
+            address: pendingEditAddress!,
+          );
+        }
+        break;
+
       case ViewType.listNewProduct:
         child = AddProductPage(onSelectView: setView);
         break;
 
       case ViewType.requestOrder:
-        // Guard: if somehow we land here without data, go back home
         if (pendingOrderData == null) {
           child = CustomerHomePage(onSelectView: setView);
         } else {
           child = RequestOrderPage(
             onSelectView: setView,
-            listing: pendingOrderData!["listing"],
-            quantity: pendingOrderData!["quantity"],
-            distance: pendingOrderData!["distance"],
-            totalCost: pendingOrderData!["totalCost"],
+            listing: pendingOrderData!['listing'],
+            quantity: pendingOrderData!['quantity'],
+            distance: pendingOrderData!['distance'],
+            totalCost: pendingOrderData!['totalCost'],
           );
         }
         break;
 
-      // ✅ Only this case changed — reads cartItems from pendingOrderData
       case ViewType.cart:
         child = CartPage(onSelectView: setView);
         break;
@@ -126,15 +164,20 @@ class _MyAppState extends State<MyApp> {
       case ViewType.vendorRequestedOrder:
         child = VendorRequestedOrder(onSelectView: setView);
         break;
+
       case ViewType.vendorInventory:
         child = VendorInventoryPage(onSelectView: setView);
         break;
+
       case ViewType.notifications:
         child = NotificationsPage(
           onSelectView: setView,
-          isVendor: selectedUserType == 'vendor', // ← this line critical
+          isVendor: selectedUserType == 'vendor',
         );
         break;
+      case ViewType.primary:
+        // TODO: Handle this case.
+        throw UnimplementedError();
     }
 
     return MaterialApp(

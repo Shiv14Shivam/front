@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../view_type.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/web_scaffold.dart'; // ✅ added
+import '../widgets/web_scaffold.dart';
 
 class AddProductPage extends StatefulWidget {
   final Function(ViewType) onSelectView;
@@ -31,12 +31,15 @@ class _AddProductPageState extends State<AddProductPage>
   final priceController = TextEditingController();
   final deliveryController = TextEditingController();
   final stockController = TextEditingController();
+  final riverSourceController = TextEditingController();
 
   bool showSuccess = false;
   bool isLoading = false;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnim;
+
+  bool isSandCategory() => selectedCategory.toLowerCase() == 'sand';
 
   @override
   void initState() {
@@ -56,6 +59,7 @@ class _AddProductPageState extends State<AddProductPage>
     priceController.dispose();
     deliveryController.dispose();
     stockController.dispose();
+    riverSourceController.dispose();
     super.dispose();
   }
 
@@ -66,40 +70,64 @@ class _AddProductPageState extends State<AddProductPage>
       categories = await api.getCategories();
       setState(() {});
     } catch (_) {
-      if (mounted) _showSnack("Failed to load categories", isSuccess: false);
+      if (mounted) _showSnack('Failed to load categories', isSuccess: false);
+    }
+  }
+
+  Future<void> fetchProductsByCategory(int categoryId) async {
+    try {
+      products = await api.getProductsByCategory(categoryId);
+      setState(() {});
+    } catch (_) {
+      if (mounted) _showSnack('Failed to load products', isSuccess: false);
     }
   }
 
   Future<void> fetchBrands(int categoryId) async {
-    brands = await api.getBrands(categoryId);
-    setState(() {});
+    try {
+      brands = await api.getBrands(categoryId);
+      setState(() {});
+    } catch (_) {
+      if (mounted) _showSnack('Failed to load brands', isSuccess: false);
+    }
   }
 
   Future<void> fetchProducts(int brandId) async {
-    products = await api.getProducts(brandId);
-    setState(() {});
+    try {
+      products = await api.getProducts(brandId);
+      setState(() {});
+    } catch (_) {
+      if (mounted) _showSnack('Failed to load products', isSuccess: false);
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   List<String> getCategories() =>
-      categories.map((c) => c["name"].toString()).toList();
+      categories.map((c) => c['name'].toString()).toList();
 
   List<String> getBrands() {
     if (selectedCategoryObj == null) return [];
-    return brands.map((b) => b["name"].toString()).toList();
+    return brands.map((b) => b['name'].toString()).toList();
   }
 
   List<dynamic> getProducts() {
+    if (isSandCategory()) return products;
     if (selectedBrandObj == null) return [];
     return products;
   }
 
   IconData getCategoryIcon(String category) {
-    if (category == "Cement") return Icons.domain;
-    if (category == "Sand") return Icons.grain;
-    if (category == "Iron Rod") return Icons.hardware;
-    return Icons.category_outlined;
+    switch (category.toLowerCase()) {
+      case 'cement':
+        return Icons.domain;
+      case 'sand':
+        return Icons.grain;
+      case 'iron rod':
+        return Icons.hardware;
+      default:
+        return Icons.category_outlined;
+    }
   }
 
   void _showSnack(String msg, {required bool isSuccess}) {
@@ -132,35 +160,52 @@ class _AddProductPageState extends State<AddProductPage>
   // ── Submit ────────────────────────────────────────────────────────────────
 
   void _submit() async {
-    if (priceController.text.isEmpty ||
-        deliveryController.text.isEmpty ||
-        stockController.text.isEmpty ||
-        selectedProductObj == null) {
-      _showSnack("Please fill all fields", isSuccess: false);
+    if (selectedCategoryObj == null) {
+      _showSnack('Please select a category', isSuccess: false);
+      return;
+    }
+    if (!isSandCategory() && selectedBrandObj == null) {
+      _showSnack('Please select a brand', isSuccess: false);
+      return;
+    }
+    if (selectedProductObj == null) {
+      _showSnack('Please select a product', isSuccess: false);
+      return;
+    }
+    if (priceController.text.trim().isEmpty) {
+      _showSnack('Please enter price per unit', isSuccess: false);
+      return;
+    }
+    if (stockController.text.trim().isEmpty) {
+      _showSnack('Please enter available stock', isSuccess: false);
       return;
     }
 
     setState(() => isLoading = true);
 
     final response = await api.createListing(
-      categoryId: selectedCategoryObj["id"],
-      brandId: selectedBrandObj["id"],
-      productId: selectedProductObj["id"],
-      pricePerBag: double.parse(priceController.text),
-      deliveryChargePerTon: double.parse(deliveryController.text),
-      stock: int.parse(stockController.text),
+      categoryId: selectedCategoryObj['id'] as int,
+      brandId: selectedBrandObj?['id'] as int?, // null for Sand
+      productId: selectedProductObj['id'] as int,
+      pricePerunit: double.tryParse(priceController.text.trim()) ?? 0,
+      deliveryChargePerTon:
+          double.tryParse(deliveryController.text.trim()) ?? 0,
+      stock: int.tryParse(stockController.text.trim()) ?? 0,
+      riverSource: riverSourceController.text.trim().isEmpty
+          ? null
+          : riverSourceController.text.trim(),
     );
 
     setState(() => isLoading = false);
 
-    if (response["success"]) {
+    if (response['success'] == true) {
       setState(() => showSuccess = true);
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) setState(() => showSuccess = false);
       });
     } else {
       _showSnack(
-        response["message"] ?? "Failed to list product",
+        response['message'] ?? 'Failed to list product',
         isSuccess: false,
       );
     }
@@ -168,8 +213,8 @@ class _AddProductPageState extends State<AddProductPage>
 
   // ═══════════════════════════════════════════════════════════════════════════
   // BUILD
-  // ✅ Only this method changed — WebScaffold wraps original Scaffold
   // ═══════════════════════════════════════════════════════════════════════════
+
   @override
   Widget build(BuildContext context) {
     final product = selectedProductObj;
@@ -177,7 +222,7 @@ class _AddProductPageState extends State<AddProductPage>
     return WebScaffold(
       isVendor: true,
       onSelectView: widget.onSelectView,
-      selectedIndex: 3, // List Product = index 3 in vendor sidebar
+      selectedIndex: 3,
       body: Scaffold(
         backgroundColor: AppColors.background,
         body: Stack(
@@ -196,41 +241,46 @@ class _AddProductPageState extends State<AddProductPage>
                           _buildProgressBar(product),
                           const SizedBox(height: 24),
 
+                          // Step 1 — Category
                           _stepCard(
                             step: 1,
-                            title: "Select Category",
-                            isActive: true,
+                            title: 'Select Category',
                             child: _buildCategoryGrid(),
                           ),
 
-                          if (selectedCategory.isNotEmpty) ...[
+                          // Step 2 — Brand (skip for Sand)
+                          if (selectedCategory.isNotEmpty &&
+                              !isSandCategory()) ...[
                             const SizedBox(height: 16),
                             _stepCard(
                               step: 2,
-                              title: "Select Brand",
-                              isActive: true,
+                              title: 'Select Brand',
                               child: _buildBrandList(),
                             ),
                           ],
 
-                          if (selectedBrand.isNotEmpty) ...[
+                          // Step 2/3 — Product
+                          if (isSandCategory()
+                              ? products.isNotEmpty
+                              : selectedBrand.isNotEmpty) ...[
                             const SizedBox(height: 16),
                             _stepCard(
-                              step: 3,
-                              title: "Select Product",
-                              isActive: true,
+                              step: isSandCategory() ? 2 : 3,
+                              title: isSandCategory()
+                                  ? 'Select Sand Type'
+                                  : 'Select Product',
                               child: _buildProductList(),
                             ),
                           ],
 
+                          // Auto-filled details + Pricing
                           if (product != null) ...[
                             const SizedBox(height: 16),
                             _buildProductDetailsCard(product),
                             const SizedBox(height: 16),
                             _stepCard(
-                              step: 4,
-                              title: "Set Your Pricing",
-                              isActive: true,
+                              step: isSandCategory() ? 3 : 4,
+                              title: 'Set Your Pricing & Details',
                               child: _buildPricingFields(product),
                             ),
                             const SizedBox(height: 24),
@@ -243,7 +293,6 @@ class _AddProductPageState extends State<AddProductPage>
                 ],
               ),
             ),
-
             if (showSuccess) _buildSuccessOverlay(),
           ],
         ),
@@ -288,7 +337,7 @@ class _AddProductPageState extends State<AddProductPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "List New Product",
+                      'List New Product',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -298,7 +347,7 @@ class _AddProductPageState extends State<AddProductPage>
                     ),
                     SizedBox(height: 2),
                     Text(
-                      "Add product to marketplace",
+                      'Add product to marketplace',
                       style: TextStyle(color: Colors.white70, fontSize: 12),
                     ),
                   ],
@@ -316,11 +365,13 @@ class _AddProductPageState extends State<AddProductPage>
   Widget _buildProgressBar(dynamic product) {
     int completedSteps = 0;
     if (selectedCategory.isNotEmpty) completedSteps++;
-    if (selectedBrand.isNotEmpty) completedSteps++;
+    if (!isSandCategory() && selectedBrand.isNotEmpty) completedSteps++;
     if (selectedProduct.isNotEmpty) completedSteps++;
     if (product != null) completedSteps++;
 
-    final steps = ["Category", "Brand", "Product", "Pricing"];
+    final steps = isSandCategory()
+        ? ['Category', 'Product', 'Pricing']
+        : ['Category', 'Brand', 'Product', 'Pricing'];
 
     return Row(
       children: List.generate(steps.length, (i) {
@@ -332,22 +383,16 @@ class _AddProductPageState extends State<AddProductPage>
               Expanded(
                 child: Column(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            height: 3,
-                            decoration: BoxDecoration(
-                              color: done
-                                  ? AppColors.vendor
-                                  : active
-                                  ? AppColors.vendor.withOpacity(0.3)
-                                  : AppColors.border,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          ),
-                        ),
-                      ],
+                    Container(
+                      height: 3,
+                      decoration: BoxDecoration(
+                        color: done
+                            ? AppColors.vendor
+                            : active
+                            ? AppColors.vendor.withOpacity(0.3)
+                            : AppColors.border,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
@@ -381,7 +426,6 @@ class _AddProductPageState extends State<AddProductPage>
     required int step,
     required String title,
     required Widget child,
-    required bool isActive,
   }) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -411,7 +455,7 @@ class _AddProductPageState extends State<AddProductPage>
                 ),
                 child: Center(
                   child: Text(
-                    "$step",
+                    '$step',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 13,
@@ -431,7 +475,6 @@ class _AddProductPageState extends State<AddProductPage>
               ),
             ],
           ),
-          const SizedBox(height: 4),
           Divider(color: AppColors.border.withOpacity(0.6), height: 24),
           child,
         ],
@@ -454,56 +497,64 @@ class _AddProductPageState extends State<AddProductPage>
       );
     }
 
-    return Row(
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: getCategories().map((category) {
         final selected = selectedCategory == category;
-        return Expanded(
-          child: GestureDetector(
-            onTap: () async {
-              final categoryObj = categories.firstWhere(
-                (c) => c["name"] == category,
-              );
-              setState(() {
-                selectedCategory = category;
-                selectedCategoryObj = categoryObj;
-                selectedBrand = '';
-                selectedProduct = '';
-                selectedBrandObj = null;
-                selectedProductObj = null;
-                products = [];
-              });
-              await fetchBrands(categoryObj["id"]);
-            },
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-              decoration: BoxDecoration(
-                color: selected ? AppColors.vendorMuted : AppColors.background,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: selected ? AppColors.vendor : AppColors.border,
-                  width: selected ? 2 : 1,
-                ),
+        return GestureDetector(
+          onTap: () async {
+            final categoryObj = categories.firstWhere(
+              (c) => c['name'] == category,
+            );
+            setState(() {
+              selectedCategory = category;
+              selectedCategoryObj = categoryObj;
+              selectedBrand = '';
+              selectedProduct = '';
+              selectedBrandObj = null;
+              selectedProductObj = null;
+              brands = [];
+              products = [];
+              riverSourceController.clear();
+            });
+            if (isSandCategory()) {
+              await fetchProductsByCategory(categoryObj['id'] as int);
+            } else {
+              await fetchBrands(categoryObj['id'] as int);
+            }
+          },
+          child: Container(
+            width:
+                (MediaQuery.of(context).size.width - 88) /
+                getCategories().length,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.vendorMuted : AppColors.background,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: selected ? AppColors.vendor : AppColors.border,
+                width: selected ? 2 : 1,
               ),
-              child: Column(
-                children: [
-                  Icon(
-                    getCategoryIcon(category),
-                    size: 26,
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  getCategoryIcon(category),
+                  size: 26,
+                  color: selected ? AppColors.vendor : AppColors.bodyText,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  category,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     color: selected ? AppColors.vendor : AppColors.bodyText,
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    category,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                      color: selected ? AppColors.vendor : AppColors.bodyText,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         );
@@ -514,19 +565,32 @@ class _AddProductPageState extends State<AddProductPage>
   // ── Brand List ────────────────────────────────────────────────────────────
 
   Widget _buildBrandList() {
+    if (brands.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(12),
+          child: CircularProgressIndicator(
+            color: AppColors.vendor,
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+
     return Column(
       children: getBrands().map((brand) {
         final selected = selectedBrand == brand;
         return GestureDetector(
           onTap: () async {
-            final brandObj = brands.firstWhere((b) => b["name"] == brand);
+            final brandObj = brands.firstWhere((b) => b['name'] == brand);
             setState(() {
               selectedBrand = brand;
               selectedBrandObj = brandObj;
               selectedProduct = '';
               selectedProductObj = null;
+              products = [];
             });
-            await fetchProducts(brandObj["id"]);
+            await fetchProducts(brandObj['id'] as int);
           },
           child: Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -574,12 +638,24 @@ class _AddProductPageState extends State<AddProductPage>
   // ── Product List ──────────────────────────────────────────────────────────
 
   Widget _buildProductList() {
+    if (products.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(12),
+          child: CircularProgressIndicator(
+            color: AppColors.vendor,
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+
     return Column(
       children: getProducts().map((p) {
-        final selected = selectedProduct == p["id"].toString();
+        final selected = selectedProduct == p['id'].toString();
         return GestureDetector(
           onTap: () => setState(() {
-            selectedProduct = p["id"].toString();
+            selectedProduct = p['id'].toString();
             selectedProductObj = p;
           }),
           child: Container(
@@ -617,7 +693,7 @@ class _AddProductPageState extends State<AddProductPage>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        p["name"],
+                        p['name'] ?? '',
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 14,
@@ -626,10 +702,10 @@ class _AddProductPageState extends State<AddProductPage>
                               : AppColors.titleText,
                         ),
                       ),
-                      if ((p["description"] ?? "").isNotEmpty) ...[
+                      if ((p['description'] ?? '').isNotEmpty) ...[
                         const SizedBox(height: 4),
                         Text(
-                          p["description"],
+                          p['description'],
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.bodyText,
@@ -691,7 +767,7 @@ class _AddProductPageState extends State<AddProductPage>
               ),
               const SizedBox(width: 10),
               const Text(
-                "Auto-filled Product Details",
+                'Auto-filled Product Details',
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
@@ -701,17 +777,18 @@ class _AddProductPageState extends State<AddProductPage>
             ],
           ),
           Divider(color: AppColors.border.withOpacity(0.6), height: 24),
-          _detailRow("Product", product["name"]),
-          _detailRow("Brand", product["brand"]?["name"] ?? ""),
-          _detailRow("Unit", product["unit"] ?? ""),
-          if ((product["description"] ?? "").isNotEmpty)
-            _detailRow("Description", product["description"]),
-          if ((product["detailed_description"] ?? "").isNotEmpty)
-            _detailRow("Details", product["detailed_description"]),
-          if ((product["specifications"] ?? []).isNotEmpty) ...[
+          _detailRow('Product', product['name'] ?? ''),
+          if (!isSandCategory())
+            _detailRow('Brand', product['brand']?['name'] ?? ''),
+          _detailRow('Unit', product['unit'] ?? ''),
+          if ((product['description'] ?? '').isNotEmpty)
+            _detailRow('Description', product['description']),
+          if ((product['detailed_description'] ?? '').isNotEmpty)
+            _detailRow('Details', product['detailed_description']),
+          if ((product['specifications'] ?? []).isNotEmpty) ...[
             const SizedBox(height: 4),
             const Text(
-              "Specifications",
+              'Specifications',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -720,7 +797,7 @@ class _AddProductPageState extends State<AddProductPage>
               ),
             ),
             const SizedBox(height: 10),
-            ...(product["specifications"] as List).map(
+            ...(product['specifications'] as List).map(
               (spec) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
@@ -743,7 +820,7 @@ class _AddProductPageState extends State<AddProductPage>
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        spec["value"] ?? "",
+                        spec['value'] ?? '',
                         style: const TextStyle(
                           fontSize: 13,
                           height: 1.4,
@@ -798,30 +875,55 @@ class _AddProductPageState extends State<AddProductPage>
   // ── Pricing Fields ────────────────────────────────────────────────────────
 
   Widget _buildPricingFields(dynamic product) {
+    final unit = product['unit'] ?? 'unit';
     return Column(
       children: [
         _pricingField(
           controller: priceController,
-          label: "Price per ${product["unit"] ?? "unit"}",
-          hint: "e.g. 350",
+          label: 'Price per $unit',
+          hint: 'e.g. 350',
           icon: Icons.currency_rupee_rounded,
-          suffix: "₹",
+          suffix: '₹',
         ),
         const SizedBox(height: 14),
         _pricingField(
           controller: deliveryController,
-          label: "Delivery charge per ton",
-          hint: "e.g. 500",
+          label: 'Delivery charge per km',
+          hint: 'e.g. 500',
           icon: Icons.local_shipping_outlined,
-          suffix: "₹",
+          suffix: '₹',
         ),
         const SizedBox(height: 14),
         _pricingField(
           controller: stockController,
-          label: "Available stock (${product["unit"] ?? "units"})",
-          hint: "e.g. 100",
+          label: 'Available stock ($unit)',
+          hint: 'e.g. 100',
           icon: Icons.inventory_2_outlined,
         ),
+
+        // ── River Source (shown for all, but especially useful for Sand) ──
+        // ── River Source (Sand only) ──
+        if (isSandCategory()) ...[
+          const SizedBox(height: 14),
+          _pricingField(
+            controller: riverSourceController,
+            label: 'River source (optional)',
+            hint: 'e.g. Mahanadi, Brahmani',
+            icon: Icons.water_outlined,
+            keyboardType: TextInputType.text,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.info_outline, size: 13, color: AppColors.subtleText),
+              const SizedBox(width: 6),
+              const Text(
+                'River source helps buyers choose quality sand',
+                style: TextStyle(fontSize: 11, color: AppColors.subtleText),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -832,6 +934,7 @@ class _AddProductPageState extends State<AddProductPage>
     required String hint,
     required IconData icon,
     String? suffix,
+    TextInputType keyboardType = TextInputType.number,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -847,7 +950,7 @@ class _AddProductPageState extends State<AddProductPage>
         const SizedBox(height: 6),
         TextField(
           controller: controller,
-          keyboardType: TextInputType.number,
+          keyboardType: keyboardType,
           style: const TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
@@ -904,7 +1007,6 @@ class _AddProductPageState extends State<AddProductPage>
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          shadowColor: AppColors.vendor.withOpacity(0.3),
         ),
         child: isLoading
             ? const SizedBox(
@@ -925,7 +1027,7 @@ class _AddProductPageState extends State<AddProductPage>
                   ),
                   SizedBox(width: 10),
                   Text(
-                    "List Product in Marketplace",
+                    'List Product in Marketplace',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 15,
@@ -977,7 +1079,7 @@ class _AddProductPageState extends State<AddProductPage>
               ),
               const SizedBox(height: 20),
               const Text(
-                "Product Listed!",
+                'Product Listed!',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w800,
@@ -986,7 +1088,7 @@ class _AddProductPageState extends State<AddProductPage>
               ),
               const SizedBox(height: 8),
               const Text(
-                "Successfully added to marketplace",
+                'Successfully added to marketplace',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,

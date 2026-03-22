@@ -1353,7 +1353,7 @@ class _NotifCard extends StatelessWidget {
     final d = notif.data;
     return d['order_id'] != null ||
         d['product_name'] != null ||
-        d['quantity_bags'] != null;
+        d['quantity_unit'] != null;
   }
 
   Widget _buildOrderDetail() {
@@ -1364,8 +1364,8 @@ class _NotifCard extends StatelessWidget {
       rows.add(_DetailRow('Order', '#${d['order_id']}'));
     if (d['product_name'] != null && (d['product_name'] as String).isNotEmpty)
       rows.add(_DetailRow('Product', d['product_name'] as String));
-    if (d['quantity_bags'] != null)
-      rows.add(_DetailRow('Quantity', '${d['quantity_bags']} bags'));
+    if (d['quantity_unit'] != null)
+      rows.add(_DetailRow('Quantity', '${d['quantity_unit']} unit'));
     if (d['subtotal'] != null)
       rows.add(_DetailRow('Subtotal', '₹${d['subtotal']}'));
     if (d['delivery_charge'] != null && (d['delivery_charge'] as num) > 0)

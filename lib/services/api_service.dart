@@ -320,6 +320,7 @@ Base URL : $_baseUrl
     }
   }
 
+  // ── addAddress — lat/lng from map pin ──────────────────────────────────────
   Future<Map<String, dynamic>> addAddress({
     required String label,
     required String line1,
@@ -328,24 +329,32 @@ Base URL : $_baseUrl
     required String state,
     required String pincode,
     required bool isDefault,
+    double? latitude, // ← from map pin
+    double? longitude, // ← from map pin
   }) async {
     try {
       final token = await getToken();
       if (token == null)
         return {"success": false, "message": "Not authenticated"};
 
+      final Map<String, dynamic> body = {
+        "label": label,
+        "address_line_1": line1,
+        "address_line_2": line2,
+        "city": city,
+        "state": state,
+        "pincode": pincode,
+        "is_default": isDefault,
+      };
+
+      // Only include coords when the user actually pinned a location
+      if (latitude != null) body["latitude"] = latitude;
+      if (longitude != null) body["longitude"] = longitude;
+
       final response = await http.post(
         Uri.parse("$_baseUrl/addresses"),
         headers: _authHeaders(token),
-        body: jsonEncode({
-          "label": label,
-          "address_line_1": line1,
-          "address_line_2": line2,
-          "city": city,
-          "state": state,
-          "pincode": pincode,
-          "is_default": isDefault,
-        }),
+        body: jsonEncode(body),
       );
 
       if (response.body.isEmpty)
@@ -366,6 +375,7 @@ Base URL : $_baseUrl
     }
   }
 
+  // ── updateAddress — lat/lng from map pin ───────────────────────────────────
   Future<Map<String, dynamic>> updateAddress(
     int id, {
     required String label,
@@ -375,28 +385,45 @@ Base URL : $_baseUrl
     required String state,
     required String pincode,
     required bool isDefault,
+    double? latitude, // ← from map pin (null = keep existing coords on server)
+    double? longitude, // ← from map pin (null = keep existing coords on server)
   }) async {
     try {
       final token = await getToken();
       if (token == null)
         return {"success": false, "message": "Not authenticated"};
 
+      final Map<String, dynamic> body = {
+        "label": label,
+        "address_line_1": line1,
+        "address_line_2": line2,
+        "city": city,
+        "state": state,
+        "pincode": pincode,
+        "is_default": isDefault,
+      };
+
+      // Only send new coords if the user re-pinned; backend keeps old ones otherwise
+      if (latitude != null) body["latitude"] = latitude;
+      if (longitude != null) body["longitude"] = longitude;
+
       final response = await http.put(
         Uri.parse("$_baseUrl/addresses/$id"),
         headers: _authHeaders(token),
-        body: jsonEncode({
-          "label": label,
-          "address_line_1": line1,
-          "address_line_2": line2,
-          "city": city,
-          "state": state,
-          "pincode": pincode,
-          "is_default": isDefault,
-        }),
+        body: jsonEncode(body),
       );
 
-      if (response.statusCode == 200) return {"success": true};
-      return {"success": false};
+      if (response.body.isEmpty)
+        return {"success": false, "message": "Empty response"};
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) return {"success": true, "data": data};
+
+      return {
+        "success": false,
+        "message": data["message"] ?? "Failed to update address",
+      };
     } catch (e) {
       return {"success": false, "message": "Network error"};
     }
@@ -508,34 +535,83 @@ Base URL : $_baseUrl
     throw Exception("Failed to load products");
   }
 
+  Future<List<dynamic>> getProductsByCategory(int categoryId) async {
+    final token = await getToken();
+
+    final response = await http.get(
+      Uri.parse("$_baseUrl/products?category_id=$categoryId"),
+      headers: _authHeaders(token!),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+
+      print("FULL RESPONSE: $data");
+
+      return data["data"];
+    }
+
+    throw Exception("Failed to load products");
+  }
+
+  // ================= LISTINGS =================
   // ================= LISTINGS =================
   Future<Map<String, dynamic>> createListing({
     required int categoryId,
-    required int brandId,
+    int? brandId, // nullable — Sand has no brand
     required int productId,
-    required double pricePerBag,
+    required double pricePerunit,
     required double deliveryChargePerTon,
     required int stock,
+    String? riverSource, // optional river source
   }) async {
-    final token = await getToken();
-    final response = await http.post(
-      Uri.parse("$_baseUrl/seller/listings"),
-      headers: _authHeaders(token!),
-      body: jsonEncode({
-        "category_id": categoryId,
-        "brand_id": brandId,
-        "product_id": productId,
-        "price_per_bag": pricePerBag,
-        "delivery_charge_per_ton": deliveryChargePerTon,
-        "available_stock_bags": stock,
-      }),
-    );
-    final data = jsonDecode(response.body);
-    if (response.statusCode == 201) return {"success": true, "data": data};
-    return {
-      "success": false,
-      "message": data["message"] ?? "Failed to create listing",
-    };
+    try {
+      final token = await getToken();
+      if (token == null) {
+        return {'success': false, 'message': 'Not authenticated'};
+      }
+
+      // Build body — only include brand_id when it exists
+      final Map<String, dynamic> body = {
+        'category_id': categoryId,
+        'product_id': productId,
+        'price_per_unit': pricePerunit,
+        'delivery_charge_per_km': deliveryChargePerTon,
+        'available_stock_unit': stock,
+      };
+
+      if (brandId != null) body['brand_id'] = brandId;
+      if (riverSource != null && riverSource.isNotEmpty) {
+        body['river_source'] = riverSource;
+      }
+
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/seller/listings'),
+            headers: _authHeaders(token),
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.body.isEmpty) {
+        return {'success': false, 'message': 'Empty response from server'};
+      }
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {'success': true, 'data': data};
+      }
+
+      return {
+        'success': false,
+        'message': data['message'] ?? 'Failed to create listing',
+      };
+    } on TimeoutException {
+      return {'success': false, 'message': 'Server timeout'};
+    } catch (e) {
+      return {'success': false, 'message': 'Network error: $e'};
+    }
   }
 
   Future<List<dynamic>> getMarketplaceListings() async {
@@ -587,7 +663,7 @@ Base URL : $_baseUrl
 
   Future<Map<String, dynamic>> addToCart({
     required int listingId,
-    required int quantityBags,
+    required int quantityunit,
   }) async {
     try {
       final token = await getToken();
@@ -600,7 +676,7 @@ Base URL : $_baseUrl
             headers: _authHeaders(token),
             body: jsonEncode({
               "listing_id": listingId,
-              "quantity_bags": quantityBags,
+              "quantity_unit": quantityunit,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -629,7 +705,7 @@ Base URL : $_baseUrl
     }
   }
 
-  Future<Map<String, dynamic>> updateCartItem(int id, int quantityBags) async {
+  Future<Map<String, dynamic>> updateCartItem(int id, int quantityunit) async {
     try {
       final token = await getToken();
       if (token == null)
@@ -639,7 +715,7 @@ Base URL : $_baseUrl
           .put(
             Uri.parse("$_baseUrl/cart/$id"),
             headers: _authHeaders(token),
-            body: jsonEncode({"quantity_bags": quantityBags}),
+            body: jsonEncode({"quantity_unit": quantityunit}),
           )
           .timeout(const Duration(seconds: 15));
 
@@ -784,7 +860,7 @@ Base URL : $_baseUrl
   // ================= DIRECT ORDER =================
   Future<Map<String, dynamic>> placeDirectOrder({
     required int listingId,
-    required int quantityBags,
+    required int quantityunit,
     required int deliveryAddressId,
     String? notes,
   }) async {
@@ -799,7 +875,7 @@ Base URL : $_baseUrl
             headers: _authHeaders(token),
             body: jsonEncode({
               "listing_id": listingId,
-              "quantity_bags": quantityBags,
+              "quantity_unit": quantityunit,
               "delivery_address_id": deliveryAddressId,
               "notes": notes ?? "",
             }),
@@ -863,7 +939,7 @@ Base URL : $_baseUrl
 
   Future<Map<String, dynamic>> restockListing(
     int listingId,
-    int addBags,
+    int addunit,
   ) async {
     try {
       final token = await getToken();
@@ -874,7 +950,7 @@ Base URL : $_baseUrl
           .patch(
             Uri.parse('$_baseUrl/vendor/inventory/$listingId/restock'),
             headers: _authHeaders(token),
-            body: jsonEncode({"add_bags": addBags}),
+            body: jsonEncode({"add_unit": addunit}),
           )
           .timeout(const Duration(seconds: 15));
 
@@ -887,7 +963,7 @@ Base URL : $_baseUrl
         return {
           "success": true,
           "message": data["message"],
-          "new_stock_bags": data["new_stock_bags"],
+          "new_stock_unit": data["new_stock_unit"],
         };
       }
       return {"success": false, "message": data["message"] ?? "Restock failed"};
@@ -900,7 +976,7 @@ Base URL : $_baseUrl
 
   Future<Map<String, dynamic>> updateListingPrices(
     int listingId, {
-    required double pricePerBag,
+    required double pricePerunit,
     required double deliveryChargePerTon,
   }) async {
     try {
@@ -913,8 +989,8 @@ Base URL : $_baseUrl
             Uri.parse('$_baseUrl/vendor/inventory/$listingId/prices'),
             headers: _authHeaders(token),
             body: jsonEncode({
-              "price_per_bag": pricePerBag,
-              "delivery_charge_per_ton": deliveryChargePerTon,
+              "price_per_unit": pricePerunit,
+              "delivery_charge_per_km": deliveryChargePerTon,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -928,8 +1004,8 @@ Base URL : $_baseUrl
         return {
           "success": true,
           "message": data["message"],
-          "price_per_bag": data["price_per_bag"],
-          "delivery_charge_per_ton": data["delivery_charge_per_ton"],
+          "price_per_unit": data["price_per_unit"],
+          "delivery_charge_per_km": data["delivery_charge_per_km"],
         };
       }
       return {
@@ -1006,7 +1082,6 @@ Base URL : $_baseUrl
     } catch (_) {}
   }
 
-  // ─── Unread count — used by bell icon to decide whether to glow ───────────
   Future<int> getUnreadNotificationCount() async {
     try {
       final token = await getToken();
@@ -1030,8 +1105,6 @@ Base URL : $_baseUrl
   }
 
   // ================= PAYMENT =================
-
-  // POST /api/orders/{orderItemId}/pay-now
   Future<Map<String, dynamic>> payNow(int orderItemId) async {
     try {
       final token = await getToken();
@@ -1066,7 +1139,6 @@ Base URL : $_baseUrl
     }
   }
 
-  // POST /api/orders/{orderItemId}/pay-later
   Future<Map<String, dynamic>> payLater(int orderItemId) async {
     try {
       final token = await getToken();
@@ -1104,7 +1176,6 @@ Base URL : $_baseUrl
     }
   }
 
-  // GET /api/orders/{orderItemId}/payment-status
   Future<Map<String, dynamic>> getPaymentStatus(int orderItemId) async {
     try {
       final token = await getToken();

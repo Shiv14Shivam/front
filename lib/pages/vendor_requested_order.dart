@@ -522,7 +522,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     final String customerName = customer["name"] ?? "Customer";
     final String customerPhone = customer["phone"] ?? "";
     final String productName = product["name"] ?? "Product";
-    final int qty = item["quantity_bags"] ?? 0;
+    final int qty = item["quantity_unit"] ?? 0;
     final double subtotal =
         double.tryParse(item["subtotal"]?.toString() ?? "0") ?? 0.0;
 
@@ -673,7 +673,7 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
                       Expanded(
                         child: _chip(
                           "Quantity",
-                          "$qty bags",
+                          "$qty unit",
                           Icons.shopping_bag_outlined,
                         ),
                       ),

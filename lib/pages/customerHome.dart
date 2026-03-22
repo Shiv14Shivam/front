@@ -25,26 +25,14 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     with TickerProviderStateMixin {
   final ApiService api = ApiService();
 
-  double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-    const R = 6371.0;
-    final dLat = (lat2 - lat1) * pi / 180;
-    final dLon = (lon2 - lon1) * pi / 180;
-    final a =
-        sin(dLat / 2) * sin(dLat / 2) +
-        cos(lat1 * pi / 180) *
-            cos(lat2 * pi / 180) *
-            sin(dLon / 2) *
-            sin(dLon / 2);
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
-  }
-
+  // ── State ──────────────────────────────────────────────────────────────────
   List<dynamic> products = [];
   List<dynamic> filteredProducts = [];
   dynamic selectedProduct;
 
-  final TextEditingController distanceController = TextEditingController();
-  final TextEditingController quantityController = TextEditingController();
-  final TextEditingController searchController = TextEditingController();
+  final searchController = TextEditingController();
+  final distanceController = TextEditingController();
+  final quantityController = TextEditingController();
 
   double totalCost = 0;
   bool isLoading = true;
@@ -52,12 +40,13 @@ class _CustomerHomePageState extends State<CustomerHomePage>
   int _cartCount = 0;
   int _selectedNavIndex = 0;
 
-  late AnimationController _fadeController;
-  late Animation<double> _fadeAnimation;
-
   String selectedCategory = "All";
   List<String> categories = ["All"];
 
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnimation;
+
+  // ── Init ───────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -69,19 +58,21 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       parent: _fadeController,
       curve: Curves.easeOut,
     );
-    loadMarketplace();
+    _loadMarketplace();
     _loadCartCount();
   }
 
-  Future<void> _loadCartCount() async {
-    final result = await api.getCart();
-    if (result["success"] == true) {
-      final summary = result["summary"];
-      setState(() => _cartCount = summary?["total_items"] ?? 0);
-    }
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    searchController.dispose();
+    distanceController.dispose();
+    quantityController.dispose();
+    super.dispose();
   }
 
-  Future<void> loadMarketplace() async {
+  // ── Data loaders ───────────────────────────────────────────────────────────
+  Future<void> _loadMarketplace() async {
     try {
       final data = await api.getMarketplaceListings();
       final cats = <String>{"All"};
@@ -96,27 +87,34 @@ class _CustomerHomePageState extends State<CustomerHomePage>
         isLoading = false;
       });
       _fadeController.forward();
-    } catch (e) {
+    } catch (_) {
       setState(() => isLoading = false);
     }
   }
 
-  Future<void> loadProductDetails(dynamic listing) async {
+  Future<void> _loadCartCount() async {
+    final result = await api.getCart();
+    if (result["success"] == true) {
+      final summary = result["summary"];
+      setState(() => _cartCount = summary?["total_items"] ?? 0);
+    }
+  }
+
+  Future<void> _loadProductDetails(dynamic listing) async {
     setState(() => isLoadingDetails = true);
     try {
-      final fullProduct = await api.getProducts(listing["product"]["id"]);
-      final enhanced = {
-        ...listing,
-        "product": {...listing["product"], ...fullProduct},
-      };
+      final full = await api.getProducts(listing["product"]["id"]);
       setState(() {
-        selectedProduct = enhanced;
+        selectedProduct = {
+          ...listing,
+          "product": {...listing["product"], ...full},
+        };
         isLoadingDetails = false;
         totalCost = 0;
         quantityController.clear();
         distanceController.clear();
       });
-    } catch (e) {
+    } catch (_) {
       setState(() {
         selectedProduct = listing;
         isLoadingDetails = false;
@@ -127,12 +125,13 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     }
   }
 
-  void filterProducts(String query) =>
+  // ── Filters ────────────────────────────────────────────────────────────────
+  void _filterProducts(String query) =>
       _applyFilters(query: query, category: selectedCategory);
 
-  void filterByCategory(String category) {
-    setState(() => selectedCategory = category);
-    _applyFilters(query: searchController.text, category: category);
+  void _filterByCategory(String cat) {
+    setState(() => selectedCategory = cat);
+    _applyFilters(query: searchController.text, category: cat);
   }
 
   void _applyFilters({required String query, required String category}) {
@@ -141,59 +140,52 @@ class _CustomerHomePageState extends State<CustomerHomePage>
         final name = (p["product"]["name"] ?? "").toLowerCase();
         final desc = (p["product"]["short_description"] ?? "").toLowerCase();
         final cat = (p["category"]?["name"] ?? "");
-        final matchSearch =
+        final matchQ =
             query.isEmpty ||
             name.contains(query.toLowerCase()) ||
             desc.contains(query.toLowerCase());
-        final matchCat = category == "All" || cat == category;
-        return matchSearch && matchCat;
+        final matchC = category == "All" || cat == category;
+        return matchQ && matchC;
       }).toList();
     });
   }
 
-  void _closeModal() {
-    setState(() {
-      selectedProduct = null;
-      totalCost = 0;
-      quantityController.clear();
-      distanceController.clear();
-    });
-  }
+  void _closeModal() => setState(() {
+    selectedProduct = null;
+    totalCost = 0;
+    quantityController.clear();
+    distanceController.clear();
+  });
 
-  // ✅ Robust firm_name extractor — checks every possible API path
-  // The vendors table has firm_name; the API may return it at different depths
-  String _getFirmName(Map<String, dynamic> seller) {
-    // 1. Directly on seller (flattened API response)
+  // ── Firm name helper ───────────────────────────────────────────────────────
+  String _firmName(Map<String, dynamic> seller) {
     final direct = seller["firm_name"];
     if (direct is String && direct.trim().isNotEmpty) return direct.trim();
-
-    // 2. Nested under seller["vendor"] (most common Laravel relationship)
     final vendor = seller["vendor"];
     if (vendor is Map) {
-      final nested = vendor["firm_name"];
-      if (nested is String && nested.trim().isNotEmpty) return nested.trim();
+      final n = vendor["firm_name"];
+      if (n is String && n.trim().isNotEmpty) return n.trim();
     }
-
-    // 3. Nested under seller["vendor_profile"]
-    final vendorProfile = seller["vendor_profile"];
-    if (vendorProfile is Map) {
-      final nested = vendorProfile["firm_name"];
-      if (nested is String && nested.trim().isNotEmpty) return nested.trim();
-    }
-
-    // 4. Fall back to owner name
     return (seller["name"] as String? ?? "").trim();
   }
 
-  @override
-  void dispose() {
-    searchController.dispose();
-    distanceController.dispose();
-    quantityController.dispose();
-    _fadeController.dispose();
-    super.dispose();
+  // ── Distance calc ──────────────────────────────────────────────────────────
+  double _haversine(double lat1, double lon1, double lat2, double lon2) {
+    const R = 6371.0;
+    final dLat = (lat2 - lat1) * pi / 180;
+    final dLon = (lon2 - lon1) * pi / 180;
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180) *
+            cos(lat2 * pi / 180) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    return R * 2 * atan2(sqrt(a), sqrt(1 - a));
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  //  BUILD
+  // ══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     final bool isDesktop = kIsWeb && !Responsive.isMobile(context);
@@ -214,17 +206,15 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                     opacity: _fadeAnimation,
                     child: Column(
                       children: [
-                        if (!isDesktop) _buildHeader(),
-                        _buildCategoryChips(isDesktop: isDesktop),
-                        Expanded(
-                          child: _buildProductGrid(isDesktop: isDesktop),
-                        ),
+                        if (!isDesktop) _buildMobileHeader(),
+                        _buildSearchAndChips(isDesktop: isDesktop),
+                        Expanded(child: _buildGrid(isDesktop: isDesktop)),
                       ],
                     ),
                   ),
-            if (isLoadingDetails) _buildLoadingOverlay(),
-            if (selectedProduct != null)
-              _productDetailModal(isDesktop: isDesktop),
+
+            if (isLoadingDetails) _loadingOverlay(),
+            if (selectedProduct != null) _detailModal(isDesktop: isDesktop),
             if (!isDesktop) _bottomNav(),
           ],
         ),
@@ -232,406 +222,403 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  // ── Mobile header ─────────────────────────────────────────────────────────
-  Widget _buildHeader() {
-    return Container(
-      decoration: const BoxDecoration(color: AppColors.primary),
-      child: SafeArea(
-        bottom: false,
+  // ─── Mobile header ─────────────────────────────────────────────────────────
+  Widget _buildMobileHeader() => Container(
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(
+        colors: [AppColors.primary, AppColors.primaryDark],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+    ),
+    child: SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 16, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Marketplace",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
-                        ),
+            Row(
+              children: [
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Marketplace",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
                       ),
-                      SizedBox(height: 2),
-                      Text(
-                        "Find the best construction materials",
-                        style: TextStyle(color: Colors.white70, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                  _headerIconBtn(
-                    Icons.notifications_none_rounded,
-                    () => widget.onSelectView(ViewType.notifications),
-                  ),
-                ],
-              ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      "Browse construction materials",
+                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                _iconBtn(
+                  Icons.notifications_none_rounded,
+                  () => widget.onSelectView(ViewType.notifications),
+                ),
+              ],
             ),
-            const SizedBox(height: 18),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-              child: _searchBarWidget(onWhite: true),
-            ),
+            const SizedBox(height: 16),
+            _searchBar(onDark: true),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
 
-  Widget _headerIconBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
-        ),
-        child: Icon(icon, color: Colors.white, size: 18),
-      ),
-    );
-  }
-
-  // ── Search bar ────────────────────────────────────────────────────────────
-  Widget _searchBarWidget({bool onWhite = false}) {
-    return Container(
+  Widget _iconBtn(IconData icon, VoidCallback onTap) => GestureDetector(
+    onTap: onTap,
+    child: Container(
+      width: 38,
+      height: 38,
       decoration: BoxDecoration(
-        color: onWhite ? Colors.white : AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: onWhite ? null : Border.all(color: AppColors.border),
-        boxShadow: onWhite
-            ? const [
-                BoxShadow(
-                  color: AppColors.shadowMedium,
-                  blurRadius: 12,
-                  offset: Offset(0, 4),
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
+      ),
+      child: Icon(icon, color: Colors.white, size: 18),
+    ),
+  );
+
+  // ─── Search + chips ────────────────────────────────────────────────────────
+  Widget _buildSearchAndChips({required bool isDesktop}) => Container(
+    color: Colors.white,
+    child: Column(
+      children: [
+        if (isDesktop)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            child: _searchBar(onDark: false),
+          ),
+        SizedBox(
+          height: 52,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            itemCount: categories.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (_, i) {
+              final cat = categories[i];
+              final selected = cat == selectedCategory;
+              return GestureDetector(
+                onTap: () => _filterByCategory(cat),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.primary : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected ? AppColors.primary : AppColors.border,
+                    ),
+                  ),
+                  child: Text(
+                    cat,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: selected ? Colors.white : AppColors.bodyText,
+                    ),
+                  ),
                 ),
-              ]
+              );
+            },
+          ),
+        ),
+        Divider(height: 1, thickness: 1, color: AppColors.border),
+      ],
+    ),
+  );
+
+  Widget _searchBar({required bool onDark}) => Container(
+    decoration: BoxDecoration(
+      color: onDark ? Colors.white : AppColors.surfaceAlt,
+      borderRadius: BorderRadius.circular(12),
+      border: onDark ? null : Border.all(color: AppColors.border),
+    ),
+    child: TextField(
+      controller: searchController,
+      onChanged: _filterProducts,
+      style: const TextStyle(fontSize: 14, color: AppColors.titleText),
+      decoration: InputDecoration(
+        hintText: "Search cement, sand, steel...",
+        hintStyle: const TextStyle(color: AppColors.subtleText, fontSize: 13),
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          color: AppColors.subtleText,
+          size: 20,
+        ),
+        suffixIcon: searchController.text.isNotEmpty
+            ? IconButton(
+                icon: const Icon(
+                  Icons.close_rounded,
+                  color: AppColors.subtleText,
+                  size: 18,
+                ),
+                onPressed: () {
+                  searchController.clear();
+                  _filterProducts("");
+                },
+              )
             : null,
-      ),
-      child: TextField(
-        controller: searchController,
-        onChanged: filterProducts,
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          color: AppColors.titleText,
-        ),
-        decoration: InputDecoration(
-          hintText: "Search products...",
-          hintStyle: const TextStyle(color: AppColors.subtleText, fontSize: 14),
-          prefixIcon: const Icon(
-            Icons.search_rounded,
-            color: AppColors.subtleText,
-            size: 20,
-          ),
-          suffixIcon: searchController.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    color: AppColors.subtleText,
-                    size: 18,
-                  ),
-                  onPressed: () {
-                    searchController.clear();
-                    filterProducts("");
-                  },
-                )
-              : null,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 14,
-          ),
+        border: InputBorder.none,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 13,
         ),
       ),
-    );
-  }
+    ),
+  );
 
-  // ── Category chips ────────────────────────────────────────────────────────
-  Widget _buildCategoryChips({required bool isDesktop}) {
-    return Container(
-      color: AppColors.surface,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (isDesktop)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-              child: _searchBarWidget(onWhite: false),
-            ),
-          SizedBox(
-            height: 54,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              itemCount: categories.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final cat = categories[i];
-                final selected = cat == selectedCategory;
-                return GestureDetector(
-                  onTap: () => filterByCategory(cat),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? AppColors.primary
-                          : AppColors.primaryMuted,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      cat,
-                      style: TextStyle(
-                        color: selected ? Colors.white : AppColors.bodyText,
-                        fontSize: 13,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Product grid ──────────────────────────────────────────────────────────
-  Widget _buildProductGrid({required bool isDesktop}) {
+  // ─── Product grid ──────────────────────────────────────────────────────────
+  Widget _buildGrid({required bool isDesktop}) {
     if (filteredProducts.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_off_rounded, size: 64, color: AppColors.border),
+            Icon(Icons.search_off_rounded, size: 56, color: AppColors.border),
             const SizedBox(height: 12),
             const Text(
               "No products found",
               style: TextStyle(
                 color: AppColors.bodyText,
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.w500,
               ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              "Try a different search or category",
+              style: TextStyle(color: AppColors.subtleText, fontSize: 13),
             ),
           ],
         ),
       );
     }
 
-    final int columns = Responsive.value(
+    final columns = Responsive.value<int>(
       context,
       mobile: 2,
       tablet: 3,
       desktop: 4,
     );
-    final double aspectRatio = Responsive.value(
-      context,
-      mobile: 0.62,
-      tablet: 0.70,
-      desktop: 0.72,
-    );
 
     return GridView.builder(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, isDesktop ? 32 : 100),
+      padding: EdgeInsets.fromLTRB(
+        isDesktop ? 24 : 16,
+        isDesktop ? 24 : 16,
+        isDesktop ? 24 : 16,
+        isDesktop ? 40 : 100,
+      ),
       itemCount: filteredProducts.length,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: columns,
-        childAspectRatio: aspectRatio,
+        childAspectRatio: isDesktop ? 0.78 : 0.68,
         crossAxisSpacing: isDesktop ? 20 : 14,
         mainAxisSpacing: isDesktop ? 20 : 14,
       ),
-      itemBuilder: (context, index) =>
-          _productCard(filteredProducts[index], isDesktop: isDesktop),
+      itemBuilder: (_, i) =>
+          _productCard(filteredProducts[i], isDesktop: isDesktop),
     );
   }
 
-  Widget _productCard(dynamic p, {bool isDesktop = false}) {
+  // ─── Product card ──────────────────────────────────────────────────────────
+  Widget _productCard(dynamic p, {required bool isDesktop}) {
     final imageUrl = p["product"]["image_url"] as String?;
-    return GestureDetector(
-      onTap: () => loadProductDetails(p),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.border, width: 1),
-          boxShadow: const [
-            BoxShadow(
-              blurRadius: 14,
-              color: AppColors.shadowSoft,
-              offset: Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 4,
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(20),
-                ),
-                child: imageUrl != null && imageUrl.isNotEmpty
-                    ? Image.network(
-                        imageUrl,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _imagePlaceholder(p),
-                        loadingBuilder: (_, child, progress) =>
-                            progress == null ? child : _shimmer(),
-                      )
-                    : _imagePlaceholder(p),
-              ),
-            ),
-            Expanded(
-              flex: 5,
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  isDesktop ? 14 : 12,
-                  isDesktop ? 10 : 8,
-                  isDesktop ? 14 : 12,
-                  isDesktop ? 12 : 10,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          p["product"]["name"] ?? "",
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: isDesktop ? 14.5 : 13.5,
-                            color: AppColors.titleText,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          p["product"]["short_description"] ?? "",
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            color: AppColors.subtleText,
-                            height: 1.3,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "₹${p["price_per_bag"]}",
-                              style: TextStyle(
-                                fontSize: isDesktop ? 17 : 16,
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            Text(
-                              p["product"]["unit"] ?? "",
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                color: AppColors.subtleText,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryMuted,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(
-                            Icons.arrow_forward_ios_rounded,
-                            size: 12,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+    final name = p["product"]["name"] ?? "";
+    final desc = p["product"]["short_description"] ?? "";
+    final price = p["price_per_unit"];
+    final unit = p["product"]["unit"] ?? "";
+    final category = p["category"]?["name"] ?? "";
 
-  Widget _imagePlaceholder(dynamic p) {
-    final name = (p["product"]["name"] ?? "").toLowerCase();
-    String emoji = "🏗️";
-    Color bg = AppColors.surfaceAlt;
-    if (name.contains("cement")) {
-      emoji = "🧱";
-      bg = const Color(0xFFF0EDE8);
-    } else if (name.contains("sand") || name.contains("aggregate")) {
-      emoji = "⛏️";
-      bg = AppColors.sandLight;
-    } else if (name.contains("steel") || name.contains("iron")) {
-      emoji = "🔩";
-      bg = const Color(0xFFE8F0EE);
-    } else if (name.contains("paint")) {
-      emoji = "🎨";
-      bg = const Color(0xFFF0E8F5);
-    } else if (name.contains("tile") || name.contains("marble")) {
-      emoji = "🔲";
-    }
-    return Container(
-      color: bg,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned.fill(child: CustomPaint(painter: _DotPainter())),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+    return GestureDetector(
+      onTap: () => _loadProductDetails(p),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(emoji, style: const TextStyle(fontSize: 46)),
-              const SizedBox(height: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(6),
+              // ── Image area ──────────────────────────────────────────────
+              Expanded(
+                flex: 5,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(18),
+                  ),
+                  child: imageUrl != null && imageUrl.isNotEmpty
+                      ? Image.network(
+                          imageUrl,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              _placeholder(name, category),
+                          loadingBuilder: (_, child, prog) =>
+                              prog == null ? child : _shimmer(),
+                        )
+                      : _placeholder(name, category),
                 ),
-                child: const Text(
-                  "Image coming soon",
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: AppColors.bodyText,
-                    fontWeight: FontWeight.w500,
+              ),
+
+              // ── Info area ───────────────────────────────────────────────
+              Expanded(
+                flex: 4,
+                child: Padding(
+                  padding: EdgeInsets.all(isDesktop ? 14 : 11),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Name + desc
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: isDesktop ? 14 : 13,
+                              color: AppColors.titleText,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            desc,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: AppColors.subtleText,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      // Price + arrow
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "₹$price",
+                                style: TextStyle(
+                                  fontSize: isDesktop ? 17 : 16,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                              Text(
+                                unit,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.subtleText,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryMuted,
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            child: const Icon(
+                              Icons.arrow_forward_rounded,
+                              size: 15,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // ─── Image placeholder ─────────────────────────────────────────────────────
+  Widget _placeholder(String name, String category) {
+    final n = name.toLowerCase();
+    late IconData icon;
+    late Color bgColor;
+    late Color iconColor;
+
+    if (n.contains("cement") || category.toLowerCase().contains("cement")) {
+      icon = Icons.layers_rounded;
+      bgColor = const Color(0xFFF5F0EA);
+      iconColor = const Color(0xFFB5895A);
+    } else if (n.contains("sand") ||
+        n.contains("aggregate") ||
+        category.toLowerCase().contains("sand")) {
+      icon = Icons.grain_rounded;
+      bgColor = const Color(0xFFFDF5E6);
+      iconColor = const Color(0xFFD4973A);
+    } else if (n.contains("steel") ||
+        n.contains("iron") ||
+        category.toLowerCase().contains("steel")) {
+      icon = Icons.view_module_rounded;
+      bgColor = const Color(0xFFEEF2F5);
+      iconColor = const Color(0xFF5B7A8C);
+    } else if (n.contains("paint")) {
+      icon = Icons.format_paint_rounded;
+      bgColor = const Color(0xFFF3EEF9);
+      iconColor = const Color(0xFF8B5CF6);
+    } else {
+      icon = Icons.construction_rounded;
+      bgColor = AppColors.surfaceAlt;
+      iconColor = AppColors.bodyText;
+    }
+
+    return Container(
+      color: bgColor,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Subtle dot texture
+          Positioned.fill(
+            child: CustomPaint(
+              painter: _DotPainter(iconColor.withOpacity(0.12)),
+            ),
+          ),
+          Icon(icon, size: 42, color: iconColor.withOpacity(0.6)),
         ],
       ),
     );
@@ -640,70 +627,74 @@ class _CustomerHomePageState extends State<CustomerHomePage>
   Widget _shimmer() => Container(
     color: AppColors.surfaceAlt,
     child: const Center(
-      child: CircularProgressIndicator(
-        strokeWidth: 2,
-        color: AppColors.primary,
+      child: SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: AppColors.primary,
+        ),
       ),
     ),
   );
 
-  Widget _buildLoadingOverlay() {
-    return Positioned.fill(
-      child: Container(
-        color: Colors.black26,
-        child: Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: const [
-                BoxShadow(
-                  color: AppColors.shadowMedium,
-                  blurRadius: 20,
-                  offset: Offset(0, 8),
+  // ─── Loading overlay ───────────────────────────────────────────────────────
+  Widget _loadingOverlay() => Positioned.fill(
+    child: Container(
+      color: Colors.black26,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.primary,
                 ),
-              ],
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primary,
-                  ),
+              ),
+              SizedBox(width: 14),
+              Text(
+                "Loading...",
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.bodyText,
                 ),
-                SizedBox(width: 14),
-                Text(
-                  "Loading details...",
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.bodyText,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
 
-  // ── Product detail modal ──────────────────────────────────────────────────
-  Widget _productDetailModal({bool isDesktop = false}) {
+  // ══════════════════════════════════════════════════════════════════════════
+  //  PRODUCT DETAIL MODAL
+  // ══════════════════════════════════════════════════════════════════════════
+  Widget _detailModal({required bool isDesktop}) {
     final p = selectedProduct;
     final product = p["product"] as Map<String, dynamic>;
     final seller = p["seller"] as Map<String, dynamic>;
     final imageUrl = product["image_url"] as String?;
-    final bool vendorHasLocation =
+    final vendorHasLoc =
         seller["warehouse_lat"] != null && seller["warehouse_lng"] != null;
-
-    // ✅ Firm name with full fallback chain
-    final String displayName = _getFirmName(seller);
+    final firmName = _firmName(seller);
+    final category = p["category"]?["name"] ?? "";
 
     return Positioned.fill(
       child: GestureDetector(
@@ -715,67 +706,93 @@ class _CustomerHomePageState extends State<CustomerHomePage>
               onTap: () {},
               child: Center(
                 child: Container(
-                  margin: EdgeInsets.fromLTRB(
-                    isDesktop ? 40 : 14,
-                    isDesktop ? 32 : 20,
-                    isDesktop ? 40 : 14,
-                    isDesktop ? 32 : 80,
+                  margin: EdgeInsets.symmetric(
+                    horizontal: isDesktop ? 80 : 16,
+                    vertical: isDesktop ? 32 : 20,
                   ),
                   constraints: BoxConstraints(
-                    maxWidth: isDesktop ? 700 : 600,
-                    maxHeight: isDesktop
-                        ? MediaQuery.of(context).size.height * 0.85
-                        : double.infinity,
+                    maxWidth: isDesktop ? 680 : double.infinity,
+                    maxHeight: MediaQuery.of(context).size.height * 0.88,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.background,
-                    borderRadius: BorderRadius.circular(26),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
                   ),
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(26),
+                    borderRadius: BorderRadius.circular(24),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Image
+                        // ── Image header ──────────────────────────────────
                         Stack(
                           children: [
                             SizedBox(
-                              height: isDesktop ? 260 : 210,
+                              height: isDesktop ? 240 : 200,
                               width: double.infinity,
                               child: imageUrl != null && imageUrl.isNotEmpty
                                   ? Image.network(
                                       imageUrl,
                                       fit: BoxFit.cover,
                                       errorBuilder: (_, __, ___) =>
-                                          _modalPlaceholder(product),
+                                          _placeholder(
+                                            product["name"] ?? "",
+                                            category,
+                                          ),
                                     )
-                                  : _modalPlaceholder(product),
+                                  : _placeholder(
+                                      product["name"] ?? "",
+                                      category,
+                                    ),
                             ),
+                            // Gradient fade at bottom
                             Positioned(
                               bottom: 0,
                               left: 0,
                               right: 0,
-                              height: 80,
                               child: Container(
+                                height: 80,
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     begin: Alignment.topCenter,
                                     end: Alignment.bottomCenter,
                                     colors: [
                                       Colors.transparent,
-                                      AppColors.background.withOpacity(0.9),
+                                      Colors.white.withOpacity(0.95),
                                     ],
                                   ),
                                 ),
                               ),
                             ),
+                            // Category chip
+                            Positioned(
+                              top: 14,
+                              left: 14,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  category,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Close btn
                             Positioned(
                               top: 12,
                               right: 12,
                               child: GestureDetector(
                                 onTap: _closeModal,
                                 child: Container(
-                                  padding: const EdgeInsets.all(8),
+                                  padding: const EdgeInsets.all(7),
                                   decoration: BoxDecoration(
                                     color: Colors.black38,
                                     borderRadius: BorderRadius.circular(50),
@@ -783,29 +800,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                   child: const Icon(
                                     Icons.close,
                                     color: Colors.white,
-                                    size: 18,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              top: 12,
-                              left: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  p["category"]?["name"] ?? "",
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
+                                    size: 17,
                                   ),
                                 ),
                               ),
@@ -813,41 +808,40 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                           ],
                         ),
 
-                        // Scrollable body
+                        // ── Scrollable body ───────────────────────────────
                         Flexible(
                           child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(18, 10, 18, 24),
+                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Name + price
+                                // Name + price row
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     Expanded(
                                       child: Text(
                                         product["name"] ?? "",
                                         style: const TextStyle(
                                           fontSize: 20,
-                                          fontWeight: FontWeight.w800,
+                                          fontWeight: FontWeight.w900,
                                           color: AppColors.titleText,
-                                          letterSpacing: -0.3,
+                                          letterSpacing: -0.4,
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 10),
+                                    const SizedBox(width: 12),
                                     Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.end,
                                       children: [
                                         Text(
-                                          "₹${p["price_per_bag"]}",
+                                          "₹${p["price_per_unit"]}",
                                           style: const TextStyle(
                                             fontSize: 22,
                                             color: AppColors.primary,
-                                            fontWeight: FontWeight.w800,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: -0.5,
                                           ),
                                         ),
                                         Text(
@@ -861,17 +855,27 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: 16),
 
-                                // ✅ Vendor card — firm_name shown as primary
-                                _card(
+                                // Vendor card
+                                Container(
+                                  padding: const EdgeInsets.all(14),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.vendorMuted,
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(
+                                      color: AppColors.vendor.withOpacity(0.2),
+                                    ),
+                                  ),
                                   child: Row(
                                     children: [
                                       Container(
-                                        width: 42,
-                                        height: 42,
+                                        width: 40,
+                                        height: 40,
                                         decoration: BoxDecoration(
-                                          color: AppColors.vendorMuted,
+                                          color: AppColors.vendor.withOpacity(
+                                            0.15,
+                                          ),
                                           borderRadius: BorderRadius.circular(
                                             12,
                                           ),
@@ -879,6 +883,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                         child: const Icon(
                                           Icons.store_rounded,
                                           color: AppColors.vendor,
+                                          size: 20,
                                         ),
                                       ),
                                       const SizedBox(width: 12),
@@ -887,19 +892,17 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            // ✅ Firm name (Firm name)
                                             Text(
-                                              displayName,
+                                              firmName,
                                               style: const TextStyle(
                                                 fontWeight: FontWeight.w700,
                                                 fontSize: 14,
                                                 color: AppColors.titleText,
                                               ),
                                             ),
-                                            // Phone as subtitle
                                             if (seller["phone"] != null)
                                               Text(
-                                                seller["phone"] as String,
+                                                seller["phone"].toString(),
                                                 style: const TextStyle(
                                                   fontSize: 12,
                                                   color: AppColors.bodyText,
@@ -914,7 +917,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                           vertical: 4,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: AppColors.vendorMuted,
+                                          color: AppColors.vendor,
                                           borderRadius: BorderRadius.circular(
                                             8,
                                           ),
@@ -923,16 +926,18 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                           "Verified",
                                           style: TextStyle(
                                             fontSize: 11,
-                                            color: AppColors.vendor,
-                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w700,
                                           ),
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
-                                const SizedBox(height: 16),
 
+                                const SizedBox(height: 18),
+
+                                // Description
                                 _sectionTitle("Overview"),
                                 const SizedBox(height: 6),
                                 Text(
@@ -940,13 +945,14 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                   style: const TextStyle(
                                     fontSize: 13.5,
                                     color: AppColors.bodyText,
-                                    height: 1.5,
+                                    height: 1.55,
                                   ),
                                 ),
+
                                 if ((product["detailed_description"] ?? "")
                                     .isNotEmpty) ...[
                                   const SizedBox(height: 14),
-                                  _sectionTitle("Description"),
+                                  _sectionTitle("Details"),
                                   const SizedBox(height: 6),
                                   Text(
                                     product["detailed_description"] ?? "",
@@ -957,12 +963,21 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     ),
                                   ),
                                 ],
+
+                                // Specifications
                                 if ((product["specifications"] ?? [])
                                     .isNotEmpty) ...[
-                                  const SizedBox(height: 16),
+                                  const SizedBox(height: 18),
                                   _sectionTitle("Specifications"),
                                   const SizedBox(height: 8),
-                                  _card(
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surfaceAlt,
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: AppColors.border,
+                                      ),
+                                    ),
                                     child: Column(
                                       children: (product["specifications"] as List)
                                           .asMap()
@@ -986,17 +1001,15 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                                     : Border(
                                                         bottom: BorderSide(
                                                           color:
-                                                              AppColors.divider,
+                                                              AppColors.border,
                                                         ),
                                                       ),
                                               ),
                                               child: Row(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
                                                 children: [
                                                   const Icon(
                                                     Icons.check_circle_rounded,
-                                                    size: 16,
+                                                    size: 15,
                                                     color: AppColors.success,
                                                   ),
                                                   const SizedBox(width: 10),
@@ -1029,8 +1042,8 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     color: AppColors.primaryMuted,
                                     borderRadius: BorderRadius.circular(14),
                                     border: Border.all(
-                                      color: AppColors.borderFocus.withOpacity(
-                                        0.2,
+                                      color: AppColors.primary.withOpacity(
+                                        0.15,
                                       ),
                                     ),
                                   ),
@@ -1066,7 +1079,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                             ),
                                           ),
                                           Text(
-                                            "₹${p["delivery_charge_per_ton"]} per km",
+                                            "₹${p["delivery_charge_per_km"]} per km",
                                             style: const TextStyle(
                                               color: AppColors.primary,
                                               fontSize: 14,
@@ -1080,8 +1093,10 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                 ),
 
                                 const SizedBox(height: 20),
+
+                                // Calculate section
                                 _sectionTitle("Calculate Your Cost"),
-                                const SizedBox(height: 8),
+                                const SizedBox(height: 10),
 
                                 // Location notice
                                 Container(
@@ -1090,36 +1105,36 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                     vertical: 10,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: vendorHasLocation
+                                    color: vendorHasLoc
                                         ? AppColors.primaryMuted
-                                        : AppColors.error.withOpacity(0.08),
-                                    borderRadius: BorderRadius.circular(12),
+                                        : AppColors.error.withOpacity(0.06),
+                                    borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: vendorHasLocation
+                                      color: vendorHasLoc
                                           ? AppColors.primary.withOpacity(0.2)
-                                          : AppColors.error.withOpacity(0.3),
+                                          : AppColors.error.withOpacity(0.25),
                                     ),
                                   ),
                                   child: Row(
                                     children: [
                                       Icon(
-                                        vendorHasLocation
+                                        vendorHasLoc
                                             ? Icons.info_outline_rounded
                                             : Icons.warning_amber_rounded,
-                                        size: 16,
-                                        color: vendorHasLocation
+                                        size: 15,
+                                        color: vendorHasLoc
                                             ? AppColors.primary
                                             : AppColors.error,
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          vendorHasLocation
-                                              ? "Distance is auto-calculated from vendor's location to your default address."
+                                          vendorHasLoc
+                                              ? "Distance auto-calculated from vendor's location to your default address."
                                               : "Vendor has not set a default address yet.",
                                           style: TextStyle(
                                             fontSize: 12,
-                                            color: vendorHasLocation
+                                            color: vendorHasLoc
                                                 ? AppColors.primary
                                                 : AppColors.error,
                                             height: 1.4,
@@ -1132,149 +1147,61 @@ class _CustomerHomePageState extends State<CustomerHomePage>
 
                                 const SizedBox(height: 12),
 
-                                // Qty + Distance
+                                // Qty + Distance inputs
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: TextField(
+                                      child: _calcField(
                                         controller: quantityController,
-                                        keyboardType: TextInputType.number,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                          color: AppColors.titleText,
-                                        ),
-                                        decoration: InputDecoration(
-                                          labelText: "Quantity",
-                                          hintText: "e.g. 10",
-                                          labelStyle: const TextStyle(
-                                            fontSize: 13,
-                                            color: AppColors.bodyText,
-                                          ),
-                                          prefixIcon: const Icon(
-                                            Icons.inventory_2_outlined,
-                                            color: AppColors.primary,
-                                            size: 18,
-                                          ),
-                                          filled: true,
-                                          fillColor: AppColors.surface,
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                            borderSide: BorderSide(
-                                              color: AppColors.border,
-                                            ),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                            borderSide: BorderSide(
-                                              color: AppColors.border,
-                                            ),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                            borderSide: const BorderSide(
-                                              color: AppColors.primary,
-                                              width: 1.5,
-                                            ),
-                                          ),
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                                vertical: 14,
-                                              ),
-                                        ),
+                                        label: "Quantity",
+                                        hint: "e.g. 10",
+                                        icon: Icons.inventory_2_outlined,
+                                        readOnly: false,
                                       ),
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
-                                      child: TextField(
+                                      child: _calcField(
                                         controller: distanceController,
+                                        label: "Distance (km)",
+                                        hint: "Auto",
+                                        icon: Icons.route_rounded,
                                         readOnly: true,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                          color: AppColors.titleText,
-                                        ),
-                                        decoration: InputDecoration(
-                                          labelText: "Distance (km)",
-                                          hintText: "Auto",
-                                          labelStyle: const TextStyle(
-                                            fontSize: 13,
-                                            color: AppColors.bodyText,
-                                          ),
-                                          prefixIcon: const Icon(
-                                            Icons.route_rounded,
-                                            color: AppColors.primary,
-                                            size: 18,
-                                          ),
-                                          filled: true,
-                                          fillColor: AppColors.surfaceAlt,
-                                          border: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                            borderSide: BorderSide(
-                                              color: AppColors.border,
-                                            ),
-                                          ),
-                                          enabledBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                            borderSide: BorderSide(
-                                              color: AppColors.border,
-                                            ),
-                                          ),
-                                          focusedBorder: OutlineInputBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                            borderSide: const BorderSide(
-                                              color: AppColors.primary,
-                                              width: 1.5,
-                                            ),
-                                          ),
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                                vertical: 14,
-                                              ),
-                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
 
                                 const SizedBox(height: 12),
-                                _outlinedBtn(
+
+                                // Action buttons
+                                _outlineBtn(
                                   "Calculate",
                                   _calculateCost,
                                   icon: Icons.calculate_rounded,
                                 ),
-                                const SizedBox(height: 10),
-                                _outlinedBtn(
+                                const SizedBox(height: 8),
+                                _outlineBtn(
                                   "Add to Cart",
                                   _addToCart,
                                   icon: Icons.shopping_cart_outlined,
                                 ),
-                                const SizedBox(height: 10),
+                                const SizedBox(height: 8),
                                 _primaryBtn(
                                   "Request Order",
                                   _requestOrder,
                                   icon: Icons.shopping_cart_checkout_rounded,
                                 ),
 
+                                // Total cost
                                 if (totalCost > 0) ...[
                                   const SizedBox(height: 14),
                                   Container(
                                     width: double.infinity,
-                                    padding: const EdgeInsets.all(14),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 18,
+                                      vertical: 14,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: AppColors.vendorMuted,
                                       borderRadius: BorderRadius.circular(14),
@@ -1300,15 +1227,16 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                                           "₹${totalCost.toStringAsFixed(2)}",
                                           style: const TextStyle(
                                             color: AppColors.success,
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 20,
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: 22,
+                                            letterSpacing: -0.5,
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
                                 ],
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 8),
                               ],
                             ),
                           ),
@@ -1325,36 +1253,74 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
+  // ─── Calc field ────────────────────────────────────────────────────────────
+  Widget _calcField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    required bool readOnly,
+  }) => TextField(
+    controller: controller,
+    readOnly: readOnly,
+    keyboardType: readOnly ? null : TextInputType.number,
+    style: const TextStyle(fontSize: 14, color: AppColors.titleText),
+    decoration: InputDecoration(
+      labelText: label,
+      hintText: hint,
+      labelStyle: const TextStyle(fontSize: 12, color: AppColors.bodyText),
+      prefixIcon: Icon(icon, color: AppColors.primary, size: 17),
+      filled: true,
+      fillColor: readOnly ? AppColors.surfaceAlt : Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+      ),
+    ),
+  );
+
+  // ─── Order actions ─────────────────────────────────────────────────────────
   Future<void> _calculateCost() async {
     final qty = double.tryParse(quantityController.text.trim()) ?? 0;
     if (qty <= 0) {
       _snack("Enter a valid quantity", ok: false);
       return;
     }
+
     final seller = selectedProduct["seller"] as Map<String, dynamic>;
-    final rawVLat = seller["warehouse_lat"];
-    final rawVLng = seller["warehouse_lng"];
-    if (rawVLat == null || rawVLng == null) {
-      _snack("Vendor has not set a default address yet", ok: false);
+    final rawLat = seller["warehouse_lat"];
+    final rawLng = seller["warehouse_lng"];
+    if (rawLat == null || rawLng == null) {
+      _snack("Vendor has not set a location yet", ok: false);
       return;
     }
-    final double vendorLat;
-    final double vendorLng;
+
+    double vendorLat, vendorLng;
     try {
-      vendorLat = double.parse(rawVLat.toString());
-      vendorLng = double.parse(rawVLng.toString());
+      vendorLat = double.parse(rawLat.toString());
+      vendorLng = double.parse(rawLng.toString());
     } catch (_) {
       _snack("Vendor location data is invalid", ok: false);
       return;
     }
-    final addressRes = await api.getDefaultAddress();
-    if (!addressRes["success"]) {
-      _snack(addressRes["message"] ?? "Set a default address first", ok: false);
+
+    final addrRes = await api.getDefaultAddress();
+    if (!addrRes["success"]) {
+      _snack(addrRes["message"] ?? "Set a default address first", ok: false);
       return;
     }
-    final customer = addressRes["data"];
-    final double customerLat;
-    final double customerLng;
+
+    final customer = addrRes["data"];
+    double customerLat, customerLng;
     try {
       customerLat = double.parse(customer["latitude"].toString());
       customerLng = double.parse(customer["longitude"].toString());
@@ -1362,18 +1328,13 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       _snack("Your default address has no coordinates. Re-save it.", ok: false);
       return;
     }
-    final double dist = calculateDistance(
-      vendorLat,
-      vendorLng,
-      customerLat,
-      customerLng,
+
+    final dist = _haversine(vendorLat, vendorLng, customerLat, customerLng);
+    final price = double.parse(selectedProduct["price_per_unit"].toString());
+    final delivery = double.parse(
+      selectedProduct["delivery_charge_per_km"].toString(),
     );
-    final double price = double.parse(
-      selectedProduct["price_per_bag"].toString(),
-    );
-    final double delivery = double.parse(
-      selectedProduct["delivery_charge_per_ton"].toString(),
-    );
+
     setState(() {
       distanceController.text = dist.toStringAsFixed(2);
       totalCost = (qty * price) + (dist * delivery);
@@ -1391,29 +1352,33 @@ class _CustomerHomePageState extends State<CustomerHomePage>
       _snack("Calculate distance first", ok: false);
       return;
     }
+
     final p = selectedProduct;
     final listingId = p["id"] as int?;
     if (listingId == null) {
       _snack("Invalid listing", ok: false);
       return;
     }
-    final stock = p["available_stock_bags"] ?? 0;
+
+    final stock = p["available_stock_unit"] ?? 0;
     if (qty > stock) {
-      _snack("Only $stock bags available in stock", ok: false);
+      _snack("Only $stock unit available", ok: false);
       return;
     }
+
     setState(() => isLoadingDetails = true);
     final result = await api.addToCart(
       listingId: listingId,
-      quantityBags: qty.toInt(),
+      quantityunit: qty.toInt(),
     );
     setState(() => isLoadingDetails = false);
+
     if (result["success"] == true) {
       setState(() => _cartCount++);
       _snack(
         result["message"] ?? "${p["product"]["name"]} added to cart",
         ok: true,
-        icon: Icons.shopping_cart_checkout_rounded,
+        icon: Icons.shopping_cart_outlined,
       );
     } else {
       _snack(result["message"] ?? "Failed to add to cart", ok: false);
@@ -1429,8 +1394,8 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     }
     final p = selectedProduct;
     final cost =
-        (qty * double.parse(p["price_per_bag"].toString())) +
-        (dist * double.parse(p["delivery_charge_per_ton"].toString()));
+        (qty * double.parse(p["price_per_unit"].toString())) +
+        (dist * double.parse(p["delivery_charge_per_km"].toString()));
     widget.onSelectView(
       ViewType.requestOrder,
       orderData: {
@@ -1442,6 +1407,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
+  // ─── Snack helper ──────────────────────────────────────────────────────────
   void _snack(
     String msg, {
     required bool ok,
@@ -1455,7 +1421,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
             Icon(
               ok ? icon : Icons.error_outline,
               color: Colors.white,
-              size: 18,
+              size: 17,
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1474,29 +1440,12 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  Widget _card({required Widget child}) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: AppColors.surface,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: AppColors.border, width: 1),
-      boxShadow: const [
-        BoxShadow(
-          color: AppColors.shadowSoft,
-          blurRadius: 16,
-          offset: Offset(0, 4),
-        ),
-      ],
-    ),
-    child: child,
-  );
-
+  // ─── Shared widget helpers ─────────────────────────────────────────────────
   Widget _sectionTitle(String t) => Text(
     t,
     style: const TextStyle(
       fontWeight: FontWeight.w700,
-      fontSize: 15,
+      fontSize: 14,
       color: AppColors.titleText,
     ),
   );
@@ -1514,168 +1463,110 @@ class _CustomerHomePageState extends State<CustomerHomePage>
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[Icon(icon, size: 16), const SizedBox(width: 5)],
-          Flexible(
-            child: Text(
-              text,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-            ),
+          if (icon != null) ...[Icon(icon, size: 16), const SizedBox(width: 6)],
+          Text(
+            text,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
           ),
         ],
       ),
     ),
   );
 
-  Widget _outlinedBtn(
+  Widget _outlineBtn(
     String text,
     VoidCallback onTap, {
     IconData? icon,
   }) => SizedBox(
-    height: 48,
+    height: 46,
     width: double.infinity,
     child: OutlinedButton(
       onPressed: onTap,
       style: OutlinedButton.styleFrom(
         foregroundColor: AppColors.primary,
         side: const BorderSide(color: AppColors.primary),
-        padding: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[Icon(icon, size: 15), const SizedBox(width: 4)],
-          Flexible(
-            child: Text(
-              text,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
+          if (icon != null) ...[Icon(icon, size: 15), const SizedBox(width: 6)],
+          Text(
+            text,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ],
       ),
     ),
   );
 
-  Widget _modalPlaceholder(dynamic product) {
-    final name = (product["name"] ?? "").toLowerCase();
-    String emoji = "🏗️";
-    if (name.contains("cement"))
-      emoji = "🧱";
-    else if (name.contains("sand") || name.contains("aggregate"))
-      emoji = "⛏️";
-    else if (name.contains("steel") || name.contains("iron"))
-      emoji = "🔩";
-    else if (name.contains("paint"))
-      emoji = "🎨";
-    else if (name.contains("tile") || name.contains("marble"))
-      emoji = "🔲";
-    return Container(
-      color: AppColors.surfaceAlt,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Positioned.fill(child: CustomPaint(painter: _DotPainter())),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(emoji, style: const TextStyle(fontSize: 72)),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.75),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  "Photo coming soon",
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.bodyText,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
+  // ─── Bottom nav (mobile only) ──────────────────────────────────────────────
+  Widget _bottomNav() => Positioned(
+    bottom: 0,
+    left: 0,
+    right: 0,
+    child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: AppColors.border)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 16,
+            offset: const Offset(0, -4),
           ),
         ],
       ),
-    );
-  }
-
-  // ── Bottom nav (mobile only) ──────────────────────────────────────────────
-  Widget _bottomNav() {
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          border: Border(top: BorderSide(color: AppColors.border)),
-          boxShadow: const [
-            BoxShadow(
-              color: AppColors.shadowMedium,
-              blurRadius: 20,
-              offset: Offset(0, -4),
-            ),
-          ],
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _navItem(
-                  Icons.home_rounded,
-                  "Home",
-                  0,
-                  () => setState(() => _selectedNavIndex = 0),
-                ),
-                _navBadge(
-                  Icons.shopping_cart_rounded,
-                  "Cart",
-                  1,
-                  _cartCount,
-                  () {
-                    setState(() => _selectedNavIndex = 1);
-                    widget.onSelectView(ViewType.cart);
-                  },
-                ),
-                _navItem(Icons.person_rounded, "Profile", 2, () {
-                  setState(() => _selectedNavIndex = 2);
-                  widget.onSelectView(ViewType.cutomerProfile);
-                }),
-              ],
-            ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _navItem(
+                Icons.store_rounded,
+                "Home",
+                0,
+                () => setState(() => _selectedNavIndex = 0),
+              ),
+              _navBadgeItem(
+                Icons.shopping_cart_rounded,
+                "Cart",
+                1,
+                _cartCount,
+                () {
+                  setState(() => _selectedNavIndex = 1);
+                  widget.onSelectView(ViewType.cart);
+                },
+              ),
+              _navItem(Icons.person_rounded, "Profile", 2, () {
+                setState(() => _selectedNavIndex = 2);
+                widget.onSelectView(ViewType.cutomerProfile);
+              }),
+            ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
 
-  Widget _navItem(IconData icon, String label, int index, VoidCallback onTap) {
-    final sel = _selectedNavIndex == index;
+  Widget _navItem(IconData icon, String label, int idx, VoidCallback onTap) {
+    final sel = _selectedNavIndex == idx;
     return GestureDetector(
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 180),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             decoration: BoxDecoration(
               color: sel ? AppColors.primaryMuted : Colors.transparent,
@@ -1684,16 +1575,16 @@ class _CustomerHomePageState extends State<CustomerHomePage>
             child: Icon(
               icon,
               color: sel ? AppColors.primary : AppColors.subtleText,
-              size: 24,
+              size: 22,
             ),
           ),
           const SizedBox(height: 2),
           Text(
             label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 10,
               color: sel ? AppColors.primary : AppColors.subtleText,
-              fontWeight: sel ? FontWeight.w600 : FontWeight.normal,
+              fontWeight: sel ? FontWeight.w700 : FontWeight.normal,
             ),
           ),
         ],
@@ -1701,21 +1592,21 @@ class _CustomerHomePageState extends State<CustomerHomePage>
     );
   }
 
-  Widget _navBadge(
+  Widget _navBadgeItem(
     IconData icon,
     String label,
-    int index,
+    int idx,
     int count,
     VoidCallback onTap,
   ) {
-    final sel = _selectedNavIndex == index;
+    final sel = _selectedNavIndex == idx;
     return GestureDetector(
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 180),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             decoration: BoxDecoration(
               color: sel ? AppColors.primaryMuted : Colors.transparent,
@@ -1727,7 +1618,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                 Icon(
                   icon,
                   color: sel ? AppColors.primary : AppColors.subtleText,
-                  size: 24,
+                  size: 22,
                 ),
                 if (count > 0)
                   Positioned(
@@ -1736,8 +1627,8 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                     child: Container(
                       padding: const EdgeInsets.all(3),
                       constraints: const BoxConstraints(
-                        minWidth: 16,
-                        minHeight: 16,
+                        minWidth: 15,
+                        minHeight: 15,
                       ),
                       decoration: BoxDecoration(
                         color: AppColors.error,
@@ -1747,7 +1638,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
                         count > 9 ? "9+" : "$count",
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 9,
+                          fontSize: 8,
                           fontWeight: FontWeight.w800,
                         ),
                         textAlign: TextAlign.center,
@@ -1761,9 +1652,9 @@ class _CustomerHomePageState extends State<CustomerHomePage>
           Text(
             label,
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 10,
               color: sel ? AppColors.primary : AppColors.subtleText,
-              fontWeight: sel ? FontWeight.w600 : FontWeight.normal,
+              fontWeight: sel ? FontWeight.w700 : FontWeight.normal,
             ),
           ),
         ],
@@ -1772,17 +1663,18 @@ class _CustomerHomePageState extends State<CustomerHomePage>
   }
 }
 
+// ── Dot texture painter ────────────────────────────────────────────────────────
 class _DotPainter extends CustomPainter {
+  final Color color;
+  const _DotPainter(this.color);
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.border.withOpacity(0.5)
-      ..style = PaintingStyle.fill;
-    for (double x = 0; x < size.width; x += 18)
-      for (double y = 0; y < size.height; y += 18)
-        canvas.drawCircle(Offset(x, y), 1.5, paint);
+    final p = Paint()..color = color;
+    for (double x = 0; x < size.width; x += 20)
+      for (double y = 0; y < size.height; y += 20)
+        canvas.drawCircle(Offset(x, y), 1.5, p);
   }
 
   @override
-  bool shouldRepaint(_DotPainter _) => false;
+  bool shouldRepaint(_) => false;
 }

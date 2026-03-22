@@ -5,7 +5,7 @@ import 'package:front/utils/responsive.dart';
 import '../services/api_service.dart';
 import '../theme/app_colors.dart';
 import '../view_type.dart';
-import '../widgets/web_scaffold.dart'; 
+import '../widgets/web_scaffold.dart';
 
 class CartPage extends StatefulWidget {
   final void Function(
@@ -110,23 +110,23 @@ class _CartPageState extends State<CartPage>
               "id": item["id"],
               "listing_id": item["listing_id"],
               "quantity":
-                  double.tryParse(item["quantity_bags"]?.toString() ?? "1") ??
+                  double.tryParse(item["quantity_unit"]?.toString() ?? "1") ??
                   1.0,
               "name": product?["name"] ?? "Product",
               "seller": seller?["name"] ?? "Seller",
-              "unit": product?["unit"] ?? "per bag",
+              "unit": product?["unit"] ?? "per unit",
               "image_url": product?["image_url"],
               "price":
                   double.tryParse(
-                    listing?["price_per_bag"]?.toString() ?? "0",
+                    listing?["price_per_unit"]?.toString() ?? "0",
                   ) ??
                   0.0,
               "deliveryCharge":
                   double.tryParse(
-                    listing?["delivery_charge_per_ton"]?.toString() ?? "0",
+                    listing?["delivery_charge_per_km"]?.toString() ?? "0",
                   ) ??
                   0.0,
-              "stock": listing?["available_stock_bags"] ?? 0,
+              "stock": listing?["available_stock_unit"] ?? 0,
               "in_stock": item["in_stock"] ?? true,
               "distance": distance,
             };
@@ -210,7 +210,7 @@ class _CartPageState extends State<CartPage>
     final maxStock = _cartItems[index]["stock"] as int;
 
     if (newQty > maxStock) {
-      _showSnack("Only $maxStock bags available", isSuccess: false);
+      _showSnack("Only $maxStock unit available", isSuccess: false);
       return;
     }
 

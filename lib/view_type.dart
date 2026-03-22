@@ -9,6 +9,7 @@ enum ViewType {
   cutomerProfile,
   vendorProfile,
   addressForm,
+  editAddress,        // ← NEW
   listNewProduct,
   requestOrder,
   cart,
