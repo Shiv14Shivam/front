@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:front/services/api_service.dart';
 import 'package:front/view_type.dart';
+import 'package:front/services/session_manager.dart';
 import '../theme/app_colors.dart';
 import '../widgets/logo.dart';
 
@@ -64,7 +65,8 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = false);
 
     if (result["success"] == true) {
-      final returnedRole = result["role"];
+      final returnedRole = result["role"] as String?;
+
       if (returnedRole != widget.userType) {
         setState(
           () => _errorMessage =
@@ -72,6 +74,25 @@ class _LoginPageState extends State<LoginPage> {
         );
         return;
       }
+
+      // ── Extract token from the nested "data" map that ApiService returns ──
+      // ApiService already saved it via SharedPreferences but did NOT return
+      // it at the top level. We dig it out of result["data"] here.
+      final data = result["data"] as Map<String, dynamic>? ?? {};
+      final token =
+          (data["token"] ??
+                  data["access_token"] ??
+                  data["authorisation"]?["token"] ??
+                  '')
+              as String;
+
+      // ── Persist session so refresh restores the page ──────────────────────
+      await SessionManager.saveSession(
+        token: token,
+        userType: returnedRole!,
+        expiryHours: rememberMe ? 720 : 24, // 30 days vs 1 day
+      );
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -79,6 +100,7 @@ class _LoginPageState extends State<LoginPage> {
           backgroundColor: AppColors.success,
         ),
       );
+
       await Future.delayed(const Duration(milliseconds: 300));
       widget.onSelectView(
         isVendor ? ViewType.vendorHome : ViewType.customerHome,
@@ -120,7 +142,6 @@ class _LoginPageState extends State<LoginPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Logo
                           Row(
                             children: [
                               const AppLogo(size: 40),
@@ -136,7 +157,6 @@ class _LoginPageState extends State<LoginPage> {
                             ],
                           ),
                           const Spacer(),
-                          // Role badge
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 14,
@@ -185,7 +205,6 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ),
                           const SizedBox(height: 48),
-                          // Divider line
                           Divider(color: Colors.white.withOpacity(0.2)),
                           const SizedBox(height: 20),
                           Text(
@@ -256,7 +275,6 @@ class _LoginPageState extends State<LoginPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Mobile logo
                         if (isMobile) ...[
                           Row(
                             children: [
@@ -275,7 +293,6 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 32),
                         ],
 
-                        // Header
                         const Text(
                           "Welcome Back",
                           style: TextStyle(
@@ -317,7 +334,6 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 32),
 
-                        // Error box
                         if (_errorMessage.isNotEmpty) ...[
                           Container(
                             padding: const EdgeInsets.all(14),
@@ -360,7 +376,6 @@ class _LoginPageState extends State<LoginPage> {
                           const SizedBox(height: 20),
                         ],
 
-                        // Email field
                         _fieldLabel("Email Address"),
                         const SizedBox(height: 6),
                         _inputField(
@@ -371,7 +386,6 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         const SizedBox(height: 18),
 
-                        // Password field
                         _fieldLabel("Password"),
                         const SizedBox(height: 6),
                         TextField(
@@ -433,7 +447,6 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
 
-                        // Remember me + forgot
                         const SizedBox(height: 12),
                         Row(
                           children: [
@@ -462,7 +475,8 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                             const Spacer(),
                             GestureDetector(
-                              onTap: () {},
+                              onTap: () =>
+                                  widget.onSelectView(ViewType.forgotPassword),
                               child: Text(
                                 "Forgot password?",
                                 style: TextStyle(
@@ -475,7 +489,6 @@ class _LoginPageState extends State<LoginPage> {
                           ],
                         ),
 
-                        // Sign in button
                         const SizedBox(height: 28),
                         SizedBox(
                           width: double.infinity,
@@ -512,7 +525,6 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
 
-                        // Sign up link
                         const SizedBox(height: 20),
                         Center(
                           child: Row(
@@ -541,7 +553,6 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
 
-                        // Back link
                         const SizedBox(height: 12),
                         Center(
                           child: GestureDetector(
@@ -578,7 +589,6 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
   Widget _fieldLabel(String text) => Text(
     text,
     style: const TextStyle(

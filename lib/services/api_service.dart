@@ -1208,4 +1208,71 @@ Base URL : $_baseUrl
       return {"success": false, "message": "Network error"};
     }
   }
+
+  // ================= FORGOT PASSWORD =================
+  // ================= FORGOT PASSWORD =================
+  Future<Map<String, dynamic>> forgotPassword(String email) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/forgot-password'),
+            headers: _headers,
+            body: jsonEncode({'email': email}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {'success': true, 'message': data['message']};
+      }
+
+      return {
+        'success': false,
+        'message': data['message'] ?? 'Failed to send reset link',
+      };
+    } on TimeoutException {
+      return {'success': false, 'message': 'Server timeout'};
+    } catch (e) {
+      return {'success': false, 'message': 'Network error'};
+    }
+  }
+
+  // ================= RESET PASSWORD =================
+  Future<Map<String, dynamic>> resetPassword({
+    required String token,
+    required String email,
+    required String password,
+  }) async {
+    try {
+      print("RESET URL: $_baseUrl/reset-password");
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/reset-password'),
+            headers: _headers,
+            body: jsonEncode({
+              'token': token,
+              'email': email,
+              'password': password,
+              'password_confirmation': password,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return {'success': true, 'message': data['message']};
+      }
+
+      return {
+        'success': false,
+        'message': data['message'] ?? 'Failed to reset password',
+      };
+    } on TimeoutException {
+      return {'success': false, 'message': 'Server timeout'};
+    } catch (e) {
+      return {'success': false, 'message': 'Network error'};
+    }
+  }
 }

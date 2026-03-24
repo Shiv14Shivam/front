@@ -9,11 +9,13 @@ enum ViewType {
   cutomerProfile,
   vendorProfile,
   addressForm,
-  editAddress,        // ← NEW
+  editAddress, // ← NEW
   listNewProduct,
   requestOrder,
   cart,
   vendorRequestedOrder,
   vendorInventory,
   notifications,
+  forgotPassword,
+  resetPassword,
 }

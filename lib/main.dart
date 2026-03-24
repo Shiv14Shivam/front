@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-
 import 'package:front/pages/vendor_profile.dart';
 
+import 'package:front/services/session_manager.dart';
 import 'view_type.dart';
 import 'pages/landing_page.dart';
 import 'pages/login_page.dart';
@@ -10,13 +10,15 @@ import 'pages/signup.dart';
 import 'pages/vendorHome.dart';
 import 'pages/customer_profile.dart';
 import 'pages/address_form.dart';
-import 'pages/edit_address.dart'; // ← NEW
+import 'pages/edit_address.dart';
 import 'pages/ListNewProductPage.dart';
 import 'pages/request_order_page.dart';
 import 'pages/cart_page.dart';
 import 'pages/vendor_requested_order.dart';
 import 'pages/vendor_inventory.dart';
 import 'pages/notification.dart';
+import 'pages/forgotPassword.dart';
+import 'pages/resetPassword.dart';
 
 void main() {
   runApp(const MyApp());
@@ -30,14 +32,57 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  ViewType currentView = ViewType.landing;
+  // Start with null — show a splash/loader until session check completes
+  ViewType? currentView;
+  bool _sessionChecked = false;
 
   String selectedUserType = 'customer';
+  String? resetToken;
+  String? resetEmail;
   Map<String, dynamic>? pendingOrderData;
+  Map<String, dynamic>? pendingEditAddress;
 
-  // Holds the address being edited — set by profile pages before navigating
-  Map<String, dynamic>? pendingEditAddress; // ← NEW
+  @override
+  void initState() {
+    super.initState();
+    _restoreSession();
+  }
 
+  Future<void> _restoreSession() async {
+    // ── 1. Handle password-reset deep-link ──────────────────────────────────
+    final uri = Uri.base;
+    if (uri.fragment.contains('reset-password')) {
+      final fragment = uri.fragment;
+      final queryString = fragment.contains('?') ? fragment.split('?')[1] : '';
+      final params = Uri.splitQueryString(queryString);
+      resetToken = params['token'];
+      resetEmail = params['email'];
+      setState(() {
+        currentView = ViewType.resetPassword;
+        _sessionChecked = true;
+      });
+      return;
+    }
+
+    // ── 2. Restore session if valid ──────────────────────────────────────────
+    final valid = await SessionManager.isSessionValid();
+    if (valid) {
+      selectedUserType = await SessionManager.getStoredUserType();
+      final restoredView = await SessionManager.getStoredView();
+      setState(() {
+        currentView = restoredView;
+        _sessionChecked = true;
+      });
+    } else {
+      await SessionManager.clearSession(); // wipe stale data
+      setState(() {
+        currentView = ViewType.landing;
+        _sessionChecked = true;
+      });
+    }
+  }
+
+  // ── Navigate + persist view ──────────────────────────────────────────────
   void setView(
     ViewType view, {
     Map<String, dynamic>? orderData,
@@ -48,13 +93,26 @@ class _MyAppState extends State<MyApp> {
       if (userType != null) selectedUserType = userType;
       if (orderData != null) pendingOrderData = orderData;
     });
+    SessionManager.saveCurrentView(view); // fire-and-forget async is fine here
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget child;
+    // ── Splash screen while session check runs ───────────────────────────────
+    if (!_sessionChecked || currentView == null) {
+      return MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          backgroundColor: const Color(0xFFE8F5E9),
+          body: const Center(
+            child: CircularProgressIndicator(color: Color(0xFF15803D)),
+          ),
+        ),
+      );
+    }
 
-    switch (currentView) {
+    Widget child;
+    switch (currentView!) {
       case ViewType.landing:
         child = SandHereWebsite(
           onSelectView: (viewType, {userType}) {
@@ -86,7 +144,6 @@ class _MyAppState extends State<MyApp> {
         child = CustomerProfilePage(
           onSelectView: setView,
           onEditAddress: (address) {
-            // ← NEW callback
             setState(() => pendingEditAddress = address);
             setView(ViewType.editAddress);
           },
@@ -97,7 +154,6 @@ class _MyAppState extends State<MyApp> {
         child = VendorProfilePage(
           onSelectView: setView,
           onEditAddress: (address) {
-            // ← NEW callback
             setState(() => pendingEditAddress = address);
             setView(ViewType.editAddress);
           },
@@ -111,10 +167,8 @@ class _MyAppState extends State<MyApp> {
         );
         break;
 
-      // ── NEW ───────────────────────────────────────────────────────────────
       case ViewType.editAddress:
         if (pendingEditAddress == null) {
-          // Safety fallback — should never happen
           child = selectedUserType == 'vendor'
               ? VendorProfilePage(
                   onSelectView: setView,
@@ -175,8 +229,22 @@ class _MyAppState extends State<MyApp> {
           isVendor: selectedUserType == 'vendor',
         );
         break;
+
+      case ViewType.forgotPassword:
+        child = ForgotPasswordPage(
+          onBackToLogin: () => setView(ViewType.login),
+        );
+        break;
+
+      case ViewType.resetPassword:
+        child = ResetPasswordPage(
+          onBackToLogin: () => setView(ViewType.login),
+          token: resetToken,
+          email: resetEmail,
+        );
+        break;
+
       case ViewType.primary:
-        // TODO: Handle this case.
         throw UnimplementedError();
     }
 

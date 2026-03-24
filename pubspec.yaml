@@ -40,6 +40,7 @@ dependencies:
   web_socket_channel: ^2.4.0
   
   latlong2: ^0.9.1
+  go_router: ^17.1.0 
 
 
 dev_dependencies:
