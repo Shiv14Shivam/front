@@ -250,7 +250,6 @@ class _HeroDesktop extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 44),
-              _StatsRow(),
             ],
           ),
         ),

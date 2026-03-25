@@ -1,6 +1,1 @@
-
--[ ] forget password page (ui)
--[ ] backend logic of forget password
--[ ] sand work flow
--[ ] analytics and report and auto bill generation
--[ ] notification alert system
+# Fix rozzer_pay_webservice.dart TODOs&#10;&#10;## [x] 1. Create TODO.md&#10;## [x] 2. Update app_config.dart - Add Razorpay key&#10;## [x] 3. Refactor lib/services/rozzer_pay_webservice.dart - Clean code, fix callbacks, secure key&#10;## [x] 4. Verify imports in payment_ui.dart & Notification.dart still work&#10;## [x] 5. Test web payment flow&#10;## [ ] 6. Complete task

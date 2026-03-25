@@ -4,9 +4,8 @@ enum ViewType {
   signup,
   customerHome,
   vendorHome,
-  primary,
 
-  cutomerProfile,
+  customerProfile,
   vendorProfile,
   addressForm,
   editAddress, // ← NEW
@@ -18,4 +17,5 @@ enum ViewType {
   notifications,
   forgotPassword,
   resetPassword,
+  payment,
 }

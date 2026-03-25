@@ -130,7 +130,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
           const SnackBar(content: Text('Address added successfully')),
         );
         widget.onSelectView(
-          widget.isVendor ? ViewType.vendorProfile : ViewType.cutomerProfile,
+          widget.isVendor ? ViewType.vendorProfile : ViewType.customerProfile,
         );
       }
     } else {
@@ -207,7 +207,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
             onPressed: () => widget.onSelectView(
               widget.isVendor
                   ? ViewType.vendorProfile
-                  : ViewType.cutomerProfile,
+                  : ViewType.customerProfile,
             ),
           ),
         ],
@@ -291,7 +291,7 @@ class _AddAddressPageState extends State<AddAddressPage> {
                   onPressed: () => widget.onSelectView(
                     widget.isVendor
                         ? ViewType.vendorProfile
-                        : ViewType.cutomerProfile,
+                        : ViewType.customerProfile,
                   ),
                   child: const Text('Cancel'),
                 ),

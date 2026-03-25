@@ -2,6 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'dart:io' show Platform;
 
 class AppConfig {
+  static const String razorpayKey = String.fromEnvironment(
+    'RAZORPAY_KEY',
+    defaultValue: 'rzp_test_SV1gqQoQWT8PqR',
+  );
+
   static String get baseUrl {
     // Flutter Web
 

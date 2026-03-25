@@ -108,8 +108,8 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
                               const SizedBox(height: 20),
                               _addressesCard(),
                               const SizedBox(height: 20),
-                              _quickActionsCard(),
-                              const SizedBox(height: 28),
+                              /*_quickActionsCard(),
+                              const SizedBox(height: 28),*/
                               _logoutBtn(),
                               const SizedBox(height: 24),
                             ],
@@ -451,7 +451,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
   }
 
   // ── Quick actions card ─────────────────────────────────────────────────────
-  Widget _quickActionsCard() {
+  /* Widget _quickActionsCard() {
     final items = [
       (Icons.receipt_long_outlined, 'Order History', 'View past orders'),
       (Icons.card_giftcard_outlined, 'Rewards', 'Points & benefits'),
@@ -476,57 +476,7 @@ class _CustomerProfilePageState extends State<CustomerProfilePage>
         ],
       ),
     );
-  }
-
-  Widget _actionTile(IconData icon, String title, String sub) => InkWell(
-    onTap: () {},
-    borderRadius: BorderRadius.circular(10),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 11),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: _accentMuted,
-              borderRadius: BorderRadius.circular(11),
-            ),
-            child: Icon(icon, color: _accent, size: 18),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.titleText,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  sub,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.bodyText,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: AppColors.subtleText,
-            size: 18,
-          ),
-        ],
-      ),
-    ),
-  );
+  }*/
 
   // ── Logout ─────────────────────────────────────────────────────────────────
   Widget _logoutBtn() => SizedBox(

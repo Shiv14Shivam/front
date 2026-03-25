@@ -536,7 +536,7 @@ class _CartPageState extends State<CartPage>
             ),
           ),
           GestureDetector(
-            onTap: () => widget.onSelectView(ViewType.cutomerProfile),
+            onTap: () => widget.onSelectView(ViewType.customerProfile),
             child: const Text(
               "Add",
               style: TextStyle(

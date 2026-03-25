@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:front/pages/vendor_profile.dart';
+import 'theme/app_colors.dart';
 
 import 'package:front/services/session_manager.dart';
 import 'view_type.dart';
@@ -13,12 +13,14 @@ import 'pages/address_form.dart';
 import 'pages/edit_address.dart';
 import 'pages/ListNewProductPage.dart';
 import 'pages/request_order_page.dart';
-import 'pages/cart_page.dart';
+import 'pages/Cart_page.dart';
 import 'pages/vendor_requested_order.dart';
-import 'pages/vendor_inventory.dart';
-import 'pages/notification.dart';
-import 'pages/forgotPassword.dart';
+import 'pages/vendor_Inventory.dart';
+import 'pages/Notification.dart';
+import 'pages/forgotpassword.dart';
 import 'pages/resetPassword.dart';
+import 'pages/vendor_profile.dart';
+import 'pages/payment_ui.dart';
 
 void main() {
   runApp(const MyApp());
@@ -103,9 +105,9 @@ class _MyAppState extends State<MyApp> {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         home: Scaffold(
-          backgroundColor: const Color(0xFFE8F5E9),
+          backgroundColor: AppColors.surface,
           body: const Center(
-            child: CircularProgressIndicator(color: Color(0xFF15803D)),
+            child: CircularProgressIndicator(color: AppColors.primary),
           ),
         ),
       );
@@ -140,7 +142,7 @@ class _MyAppState extends State<MyApp> {
         child = VendorHomePage(onSelectView: setView);
         break;
 
-      case ViewType.cutomerProfile:
+      case ViewType.customerProfile:
         child = CustomerProfilePage(
           onSelectView: setView,
           onEditAddress: (address) {
@@ -244,8 +246,23 @@ class _MyAppState extends State<MyApp> {
         );
         break;
 
-      case ViewType.primary:
-        throw UnimplementedError();
+      case ViewType.payment:
+        if (pendingOrderData == null) {
+          child = CustomerHomePage(onSelectView: setView);
+        } else {
+          final listing = pendingOrderData!['listing'] as Map<String, dynamic>;
+          final productName = listing['product']['name'] ?? 'Product';
+          final vendorName = listing['seller']['name'] ?? 'Vendor';
+          final quantity = pendingOrderData!['quantity'];
+          child = PaymentPage(
+            orderItemId: 0, // TODO: Create order first in request_order_page
+            totalAmount: pendingOrderData!['totalCost'],
+            productName: productName,
+            vendorName: vendorName,
+            quantity: quantity.toInt(),
+          );
+        }
+        break;
     }
 
     return MaterialApp(
@@ -254,7 +271,8 @@ class _MyAppState extends State<MyApp> {
       theme: ThemeData(
         brightness: Brightness.light,
         primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: const Color(0xFFE8F5E9),
+        scaffoldBackgroundColor: AppColors.surface,
+        useMaterial3: true,
       ),
       home: child,
     );

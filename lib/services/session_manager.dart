@@ -42,7 +42,6 @@ class SessionManager {
       ViewType.signup,
       ViewType.forgotPassword,
       ViewType.resetPassword,
-      ViewType.primary,
     };
     if (skip.contains(view)) return;
 

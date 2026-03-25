@@ -417,7 +417,7 @@ class _WebScaffoldState extends State<WebScaffold>
             onTap: () => widget.onSelectView(
               widget.isVendor
                   ? ViewType.vendorProfile
-                  : ViewType.cutomerProfile,
+                  : ViewType.customerProfile,
             ),
             child: CircleAvatar(
               radius: 18,
@@ -449,7 +449,7 @@ class _WebScaffoldState extends State<WebScaffold>
       ViewType.customerHome,
       ViewType.cart,
       ViewType.notifications,
-      ViewType.cutomerProfile,
+      ViewType.customerProfile,
     ];
 
     final items = widget.isVendor ? vendorItems : customerItems;
@@ -482,7 +482,7 @@ class _WebScaffoldState extends State<WebScaffold>
       "Notifications",
       ViewType.notifications,
     ),
-    _NavItem(Icons.person_outline, "Profile", ViewType.cutomerProfile),
+    _NavItem(Icons.person_outline, "Profile", ViewType.customerProfile),
   ];
 }
 

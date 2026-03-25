@@ -1549,7 +1549,7 @@ class _CustomerHomePageState extends State<CustomerHomePage>
               ),
               _navItem(Icons.person_rounded, "Profile", 2, () {
                 setState(() => _selectedNavIndex = 2);
-                widget.onSelectView(ViewType.cutomerProfile);
+                widget.onSelectView(ViewType.customerProfile);
               }),
             ],
           ),

@@ -147,7 +147,7 @@ class _EditAddressPageState extends State<EditAddressPage> {
           ),
         );
         widget.onSelectView(
-          widget.isVendor ? ViewType.vendorProfile : ViewType.cutomerProfile,
+          widget.isVendor ? ViewType.vendorProfile : ViewType.customerProfile,
         );
       }
     } else {
@@ -231,7 +231,7 @@ class _EditAddressPageState extends State<EditAddressPage> {
             onPressed: () => widget.onSelectView(
               widget.isVendor
                   ? ViewType.vendorProfile
-                  : ViewType.cutomerProfile,
+                  : ViewType.customerProfile,
             ),
           ),
         ],
@@ -315,7 +315,7 @@ class _EditAddressPageState extends State<EditAddressPage> {
                   onPressed: () => widget.onSelectView(
                     widget.isVendor
                         ? ViewType.vendorProfile
-                        : ViewType.cutomerProfile,
+                        : ViewType.customerProfile,
                   ),
                   child: const Text('Cancel'),
                 ),
