@@ -87,7 +87,7 @@ class _VendorHomePageState extends State<VendorHomePage>
             orderItem['payment_status'] as String? ?? 'unpaid';
         final subtotal = _toDouble(orderItem['subtotal']);
         // delivery_charge is on the order item (from OrderItem model)
-        final deliveryCharge = _toDouble(orderItem['delivery_charge']);
+        final deliveryCharge = _toDouble(orderItem['delivery_charge'] ?? '0');
 
         if (status == 'pending') pending++;
         if (status == 'accepted') accepted++;

@@ -1,27 +1,45 @@
 // lib/pages/notifications_page.dart
 //
-// Unified NotificationsPage for both CUSTOMER and VENDOR.
+// ═══════════════════════════════════════════════════════════════════════════
+// CORRECT FLOW
+// ═══════════════════════════════════════════════════════════════════════════
 //
-// WHO GETS WHAT
-// ─────────────────────────────────────────────────────────────
-// CUSTOMER notifications (type = OrderStatusUpdatedNotification /
-//                                PaymentDueReminderNotification /
-//                                PayLaterDecisionNotification):
-//   • Order accepted   → Pay Now + Pay Later buttons
-//   • Pay Later sent   → waiting banner (no buttons, vendor must decide)
-//   • Pay Later approved (delivered + pay_later) → Pay Now only + due banner
-//   • Pay Later rejected (declined)              → status banner, no actions
-//   • Payment confirmed (processing + paid)      → status banner only
-//   • Reminder tomorrow / today                  → urgent Pay Now banner
+// 1. Customer places order  → Vendor gets "New Order" (Accept/Reject buttons)
+// 2. Vendor accepts         → Customer gets "Order Accepted" (Pay Now / Pay Later)
+// 3a. Customer pays now     → Razorpay → backend → status=processing, paid
+//                           → Both get PaymentConfirmed notification
+// 3b. Customer pays later   → status stays 'accepted', payment_status='pay_later'
+//                           → Vendor gets PayLaterRequested (Approve/Reject buttons)
+// 4a. Vendor approves       → status='processing', payment_status='pay_later'
+//                           → Customer gets PayLaterDecision(accepted=true)
+//                           → Flutter shows: Pay Now button + due date
+// 4b. Vendor rejects        → status='declined', payment_status='unpaid'
+//                           → Customer gets PayLaterDecision(accepted=false)
+//                           → Flutter shows: cancelled banner, no buttons
+// 5.  Customer pays (step 4a) → status='delivered', payment_status='paid'
+//                           → Both get PaymentConfirmed notification
 //
-// VENDOR notifications (type = OrderPlacedNotification /
-//                               PayLaterRequestedNotification /
-//                               PaymentConfirmedNotification):
-//   • New order (pending, no pay_later)          → "View Orders" button
-//   • Pay Later requested (pay_later_pending)    → Accept / Reject buttons
-//   • Payment confirmed                          → status banner only
+// ═══════════════════════════════════════════════════════════════════════════
+// BUTTON VISIBILITY MATRIX (Customer notifications)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// status='accepted' + payment_status='unpaid'    → Pay Now + Pay Later buttons
+// status='accepted' + payment_status='pay_later' → Waiting banner (no buttons)
+// status='processing' + payment_status='pay_later'→ Pay Now button + due banner
+// status='processing' + payment_status='paid'    → Confirmed banner only
+// status='delivered'  + payment_status='paid'    → Delivered banner only
+// status='declined'                              → Declined banner only
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// BUTTON VISIBILITY MATRIX (Vendor notifications)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// status='pending'           → View Orders button
+// status='pay_later_pending' → Approve Pay Later + Reject buttons
+// status='processing'/etc.   → Status banner only
 
 import 'dart:convert';
+import 'package:front/config/app_config.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -30,13 +48,9 @@ import 'package:front/services/websocket_service.dart';
 import 'package:front/theme/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// Flutter Web uses RazorpayWebService (dart:js bridge).
-// Flutter Native uses razorpay_flutter package.
 import 'package:front/services/rozzer_pay_webservice.dart'
     if (dart.library.js) 'package:front/services/rozzer_pay_webservice.dart';
 
-// Only import native Razorpay on non-web builds.
-// Use a conditional import pattern via a stub.
 import 'package:front/services/razor_pay_native_stub.dart'
     if (dart.library.io) 'package:razorpay_flutter/razorpay_flutter.dart';
 
@@ -71,40 +85,17 @@ class _Notif {
     createdAt: DateTime.tryParse(j['created_at'] ?? '') ?? DateTime.now(),
   );
 
-  factory _Notif.fromWsPush(
-    Map<String, dynamic> wsData, {
-    required bool isVendor,
-  }) => _Notif(
-    id: 'ws_${DateTime.now().millisecondsSinceEpoch}',
-    type: isVendor
-        ? 'App\\Notifications\\OrderPlacedNotification'
-        : 'App\\Notifications\\OrderStatusUpdatedNotification',
-    data: wsData,
-    isRead: false,
-    createdAt: DateTime.now(),
-  );
-
   // ── Short type helper ───────────────────────────────────────────────────────
   String get shortType => type.split('\\').last;
-
-  // ── Notification origin ─────────────────────────────────────────────────────
-  // Vendor gets: OrderPlacedNotification, PayLaterRequestedNotification,
-  //              PaymentConfirmedNotification (as vendor)
-  bool get isVendorNotif =>
-      shortType == 'OrderPlacedNotification' ||
-      shortType == 'PayLaterRequestedNotification' ||
-      (shortType == 'PaymentConfirmedNotification' &&
-          data['vendor_name'] != null);
-
-  // Customer gets: OrderStatusUpdatedNotification, PayLaterDecisionNotification,
-  //               PaymentConfirmedNotification (as customer), PaymentDueReminderNotification
-  bool get isCustomerNotif => !isVendorNotif;
 
   // ── Status helpers ──────────────────────────────────────────────────────────
   String get orderStatus => data['status'] as String? ?? '';
   String get paymentStatus => data['payment_status'] as String? ?? 'unpaid';
+  String get recipientType => data['recipient_type'] as String? ?? '';
   String get reminderType => data['reminder_type'] as String? ?? '';
 
+  // 'pay_later_pending' is ONLY used in PayLaterRequestedNotification payload
+  // to tell the vendor card to show Approve/Reject buttons.
   bool get isPayLaterPending => orderStatus == 'pay_later_pending';
   bool get isPaymentDueReminder =>
       reminderType == 'tomorrow' || reminderType == 'today';
@@ -122,8 +113,8 @@ class _Notif {
       case 'PaymentConfirmedNotification':
         return 'Payment Confirmed';
       case 'PayLaterDecisionNotification':
-        return orderStatus == 'delivered'
-            ? 'Order Complete — Pay Later Approved'
+        return orderStatus == 'processing'
+            ? 'Pay Later Approved — Pay When Ready'
             : 'Pay Later Rejected';
       case 'PaymentDueReminderNotification':
         return reminderType == 'today'
@@ -146,8 +137,8 @@ class _Notif {
       return Icons.check_circle_outline_rounded;
     }
     if (shortType == 'PayLaterDecisionNotification') {
-      return orderStatus == 'delivered'
-          ? Icons.done_all_rounded
+      return orderStatus == 'processing'
+          ? Icons.access_time_rounded
           : Icons.cancel_outlined;
     }
     if (shortType == 'PayLaterRequestedNotification') {
@@ -156,7 +147,6 @@ class _Notif {
     if (shortType == 'OrderPlacedNotification') {
       return Icons.shopping_bag_outlined;
     }
-    // OrderStatusUpdatedNotification
     switch (orderStatus) {
       case 'accepted':
         return Icons.check_circle_outline;
@@ -179,10 +169,9 @@ class _Notif {
     }
     if (shortType == 'PaymentConfirmedNotification') return AppColors.success;
     if (shortType == 'PayLaterDecisionNotification') {
-      return orderStatus == 'delivered' ? AppColors.success : AppColors.error;
+      return orderStatus == 'processing' ? AppColors.warning : AppColors.error;
     }
     if (shortType == 'PayLaterRequestedNotification') return AppColors.warning;
-    if (isVendorNotif) return AppColors.vendor;
     if (isPayLaterPending) return AppColors.warning;
     switch (orderStatus) {
       case 'accepted':
@@ -209,14 +198,13 @@ class _Notif {
       return const Color(0xFFE8F5E9);
     }
     if (shortType == 'PayLaterDecisionNotification') {
-      return orderStatus == 'delivered'
-          ? const Color(0xFFE8F5E9)
+      return orderStatus == 'processing'
+          ? const Color(0xFFFFF8E1)
           : const Color(0xFFFFEBEE);
     }
     if (shortType == 'PayLaterRequestedNotification') {
       return const Color(0xFFFFF8E1);
     }
-    if (isVendorNotif) return AppColors.vendorMuted;
     if (isPayLaterPending) return const Color(0xFFFFF8E1);
     switch (orderStatus) {
       case 'accepted':
@@ -270,40 +258,29 @@ class NotificationsPage extends StatefulWidget {
 
 class _NotificationsPageState extends State<NotificationsPage>
     with TickerProviderStateMixin {
-  // ── Animations ───────────────────────────────────────────────────────────────
   late final AnimationController _entryCtrl;
   late final Animation<double> _headerFade;
   late final Animation<Offset> _headerSlide;
   late final Animation<double> _contentFade;
   late final Animation<Offset> _contentSlide;
 
-  // ── Services ──────────────────────────────────────────────────────────────────
   final _api = ApiService();
   final _ws = WebSocketService();
-
-  // ── Razorpay — WEB path (dart:js bridge) ──────────────────────────────────
   final _razorpayWeb = RazorpayWebService();
-
-  // ── Razorpay — NATIVE path (razorpay_flutter package) ─────────────────────
-  // Only constructed on non-web builds to avoid dart:js conflicts.
   Razorpay? _razorpayNative;
 
   int? _pendingPaymentOrderItemId;
   double? _pendingPaymentAmount;
 
-  // ── State ─────────────────────────────────────────────────────────────────────
   List<_Notif> _notifs = [];
   bool _loading = true;
   String? _error;
-  int _tab = 0; // 0 = All, 1 = Unread
+  int _tab = 0;
 
-  // value: 'paying' | 'pay_later' | 'accepting' | 'rejecting'
   final Map<int, String> _actionLoading = {};
-  int _selectedPayLaterDays = 3;
   WsState _wsState = WsState.disconnected;
   bool _newArrived = false;
 
-  // ── Getters ───────────────────────────────────────────────────────────────────
   int get _unreadCount => _notifs.where((n) => !n.isRead).length;
   List<_Notif> get _filtered =>
       _tab == 1 ? _notifs.where((n) => !n.isRead).toList() : _notifs;
@@ -313,7 +290,6 @@ class _NotificationsPageState extends State<NotificationsPage>
       widget.isVendor ? AppColors.vendorGradient : AppColors.primaryGradient;
   bool get _isDesktopWeb => kIsWeb && !Responsive.isMobile(context);
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -344,9 +320,7 @@ class _NotificationsPageState extends State<NotificationsPage>
           ),
         );
 
-    // Only customers can pay — vendors only accept/reject
     if (!widget.isVendor) _initRazorpay();
-
     _loadFromHttp();
     _connectWebSocket();
   }
@@ -359,19 +333,15 @@ class _NotificationsPageState extends State<NotificationsPage>
     super.dispose();
   }
 
-  // ── Razorpay init ─────────────────────────────────────────────────────────
   void _initRazorpay() {
     if (!kIsWeb) {
-      // Native (Android/iOS)
       _razorpayNative = Razorpay();
       _razorpayNative!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _onNativeSuccess);
       _razorpayNative!.on(Razorpay.EVENT_PAYMENT_ERROR, _onNativeError);
       _razorpayNative!.on(Razorpay.EVENT_EXTERNAL_WALLET, _onNativeWallet);
     }
-    // Web uses _razorpayWeb with callbacks — no listeners needed here
   }
 
-  // ── Native Razorpay callbacks ────────────────────────────────────────────
   void _onNativeSuccess(PaymentSuccessResponse response) =>
       _handlePaymentSuccess(response.paymentId ?? '');
 
@@ -383,10 +353,9 @@ class _NotificationsPageState extends State<NotificationsPage>
     _pendingPaymentAmount = null;
   }
 
-  void _onNativeWallet(ExternalWalletResponse response) =>
-      _showSnack('Wallet: ${response.walletName}');
+  void _onNativeWallet(ExternalWalletResponse response) {}
 
-  // ── Common payment success handler ───────────────────────────────────────
+  // ── After Razorpay returns a paymentId, verify with backend ─────────────
   Future<void> _handlePaymentSuccess(String paymentId) async {
     final orderItemId = _pendingPaymentOrderItemId;
     if (orderItemId == null) return;
@@ -398,7 +367,10 @@ class _NotificationsPageState extends State<NotificationsPage>
 
     if (result['success'] == true) {
       _showSnack(result['message'] ?? 'Payment successful!', isSuccess: true);
-      _updateNotifPaymentStatus(orderItemId, 'paid', 'processing');
+      // Update local notification state to show confirmed banner
+      final data = result['data'] as Map<String, dynamic>?;
+      final newStatus = data?['order_status'] as String? ?? 'processing';
+      _updateNotifData(orderItemId, newStatus: newStatus, payStatus: 'paid');
     } else {
       _showSnack(result['message'] ?? 'Payment failed.', isSuccess: false);
     }
@@ -406,7 +378,7 @@ class _NotificationsPageState extends State<NotificationsPage>
     _pendingPaymentAmount = null;
   }
 
-  // ── Data loading ──────────────────────────────────────────────────────────
+  // ── Load notifications from HTTP ─────────────────────────────────────────
   Future<void> _loadFromHttp() async {
     if (!mounted) return;
     setState(() {
@@ -455,7 +427,15 @@ class _NotificationsPageState extends State<NotificationsPage>
     };
     _ws.onNotification = (Map<String, dynamic> wsData) {
       if (!mounted) return;
-      final notif = _Notif.fromWsPush(wsData, isVendor: widget.isVendor);
+      final notif = _Notif(
+        id: 'ws_${DateTime.now().millisecondsSinceEpoch}',
+        type:
+            wsData['type'] as String? ??
+            'App\\Notifications\\OrderStatusUpdatedNotification',
+        data: wsData,
+        isRead: false,
+        createdAt: DateTime.now(),
+      );
       setState(() {
         _notifs.insert(0, notif);
         _newArrived = true;
@@ -469,7 +449,7 @@ class _NotificationsPageState extends State<NotificationsPage>
     await _ws.connect(token: token, userId: userId, isVendor: widget.isVendor);
   }
 
-  // ── Notification actions ──────────────────────────────────────────────────
+  // ── Mark read ─────────────────────────────────────────────────────────────
   Future<void> _markAsRead(_Notif notif) async {
     if (notif.isRead) return;
     setState(() {
@@ -488,14 +468,14 @@ class _NotificationsPageState extends State<NotificationsPage>
   }
 
   // ── PAY NOW ───────────────────────────────────────────────────────────────
-  //
-  // Customers only. Opens Razorpay (web or native) and then calls backend.
   Future<void> _payNow(_Notif notif) async {
     final orderItemId = notif.data['order_item_id'] as int?;
     if (orderItemId == null) return;
 
-    final totalAmount =
-        (notif.data['total_amount'] ?? notif.data['payment_due'] ?? 0) as num;
+    // ✅ FIXED TypeError "0.00": Safe numeric parsing
+    final totalAmountRaw =
+        notif.data['total_amount'] ?? notif.data['payment_due'] ?? '0';
+    final totalAmount = (double.tryParse(totalAmountRaw.toString()) ?? 0.0);
 
     setState(() => _actionLoading[orderItemId] = 'paying');
     await _markAsRead(notif);
@@ -503,7 +483,6 @@ class _NotificationsPageState extends State<NotificationsPage>
     _pendingPaymentOrderItemId = orderItemId;
     _pendingPaymentAmount = totalAmount.toDouble();
 
-    // Load user prefill data
     final prefs = await SharedPreferences.getInstance();
     final userRaw = prefs.getString('user_data');
     String name = '', email = '', phone = '';
@@ -517,7 +496,6 @@ class _NotificationsPageState extends State<NotificationsPage>
     }
 
     if (kIsWeb) {
-      // ── Flutter Web: use dart:js bridge ──────────────────────────────────
       _razorpayWeb.openPayment(
         orderItemId: orderItemId,
         amount: _pendingPaymentAmount!,
@@ -534,9 +512,8 @@ class _NotificationsPageState extends State<NotificationsPage>
         },
       );
     } else {
-      // ── Flutter Native: use razorpay_flutter ──────────────────────────────
       final options = {
-        'key': 'rzp_test_XXXXXXXXXXXXXXX', // ← your Key ID
+        'key': AppConfig.razorpayKey,
         'amount': (_pendingPaymentAmount! * 100).toInt(),
         'currency': 'INR',
         'name': 'SandHere',
@@ -554,7 +531,7 @@ class _NotificationsPageState extends State<NotificationsPage>
     }
   }
 
-  // ── PAY LATER (customer) ──────────────────────────────────────────────────
+  // ── PAY LATER (customer requests) ─────────────────────────────────────────
   Future<void> _payLater(_Notif notif) async {
     final orderItemId = notif.data['order_item_id'] as int?;
     if (orderItemId == null) return;
@@ -576,19 +553,21 @@ class _NotificationsPageState extends State<NotificationsPage>
     if (result['success'] == true) {
       final dueFormatted = result['data']?['payment_due_formatted'] ?? '';
       _showSnack(
-        'Pay later requested for $selectedDays day(s). Due: $dueFormatted',
+        'Pay later requested ($selectedDays day(s)). Due: $dueFormatted. Waiting for vendor.',
         isSuccess: true,
       );
-      // Switch to the "pay_later_requested" waiting state so buttons disappear
-      _updateNotifData(notif.id, {
-        ...notif.data,
-        'payment_status': 'pay_later',
-        'days_requested': selectedDays,
-        'payment_due_formatted': dueFormatted,
-        // Keep status as 'accepted' — vendor hasn't decided yet.
-        // The card will now show the "waiting for vendor" banner instead of buttons.
-        'status': 'accepted',
-      });
+      // Update notification to show "waiting for vendor" state:
+      // status stays 'accepted', payment_status changes to 'pay_later'
+      _updateNotifData(
+        orderItemId,
+        payStatus: 'pay_later',
+        // Keep order_status as 'accepted' — vendor hasn't decided yet
+        // The card will show the waiting banner instead of action buttons
+        extraData: {
+          'days_requested': selectedDays,
+          'payment_due_formatted': dueFormatted,
+        },
+      );
     } else {
       _showSnack(
         result['message'] ?? 'Failed to request pay later.',
@@ -597,7 +576,7 @@ class _NotificationsPageState extends State<NotificationsPage>
     }
   }
 
-  // ── ACCEPT PAY LATER (vendor) ─────────────────────────────────────────────
+  // ── ACCEPT PAY LATER (vendor) ──────────────────────────────────────────────
   Future<void> _acceptPayLater(_Notif notif) async {
     final orderItemId = notif.data['order_item_id'] as int?;
     if (orderItemId == null) return;
@@ -613,16 +592,21 @@ class _NotificationsPageState extends State<NotificationsPage>
     if (result['success'] == true) {
       final due = result['data']?['payment_due_formatted'] ?? '';
       _showSnack(
-        'Pay later approved! Order complete. Due: $due',
+        'Pay later approved! Order is processing. Due: $due',
         isSuccess: true,
       );
-      _updateNotifData(notif.id, {...notif.data, 'status': 'delivered'});
+      // Update to show "approved" state — no more Approve/Reject buttons
+      _updateNotifData(
+        orderItemId,
+        newStatus: 'processing',
+        payStatus: 'pay_later',
+      );
     } else {
       _showSnack(result['message'] ?? 'Failed to approve.', isSuccess: false);
     }
   }
 
-  // ── REJECT PAY LATER (vendor) ─────────────────────────────────────────────
+  // ── REJECT PAY LATER (vendor) ──────────────────────────────────────────────
   Future<void> _rejectPayLater(_Notif notif) async {
     final orderItemId = notif.data['order_item_id'] as int?;
     if (orderItemId == null) return;
@@ -639,42 +623,38 @@ class _NotificationsPageState extends State<NotificationsPage>
     setState(() => _actionLoading.remove(orderItemId));
 
     if (result['success'] == true) {
-      _showSnack('Order cancelled — pay later rejected.', isSuccess: false);
-      _updateNotifData(notif.id, {...notif.data, 'status': 'declined'});
+      _showSnack('Pay later rejected. Order cancelled.', isSuccess: false);
+      _updateNotifData(orderItemId, newStatus: 'declined', payStatus: 'unpaid');
     } else {
       _showSnack(result['message'] ?? 'Failed to reject.', isSuccess: false);
     }
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  void _updateNotifPaymentStatus(
-    int orderItemId,
-    String payStatus,
-    String orderStatus,
-  ) {
+  // ── Helper: update notif data in the list ─────────────────────────────────
+  // Finds notification by orderItemId and updates its status/payment fields.
+  void _updateNotifData(
+    int orderItemId, {
+    String? newStatus,
+    String? payStatus,
+    Map<String, dynamic>? extraData,
+  }) {
     setState(() {
       final i = _notifs.indexWhere(
         (n) => n.data['order_item_id'] == orderItemId,
       );
       if (i != -1) {
-        final updated = Map<String, dynamic>.from(_notifs[i].data)
-          ..['payment_status'] = payStatus
-          ..['status'] = orderStatus;
+        final updated = Map<String, dynamic>.from(_notifs[i].data);
+        if (newStatus != null) updated['status'] = newStatus;
+        if (payStatus != null) updated['payment_status'] = payStatus;
+        if (extraData != null) updated.addAll(extraData);
         _notifs[i] = _notifs[i].withData(updated);
       }
     });
   }
 
-  void _updateNotifData(String notifId, Map<String, dynamic> newData) {
-    setState(() {
-      final i = _notifs.indexWhere((n) => n.id == notifId);
-      if (i != -1) _notifs[i] = _notifs[i].withData(newData);
-    });
-  }
-
-  // ── Day picker sheet ──────────────────────────────────────────────────────
+  // ── Day picker bottom sheet ───────────────────────────────────────────────
   Future<int?> _showDayPickerSheet() async {
-    int tempDays = _selectedPayLaterDays;
+    int tempDays = 3;
     return showModalBottomSheet<int>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -683,143 +663,135 @@ class _NotificationsPageState extends State<NotificationsPage>
       ),
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) {
-          return Padding(
-            padding: EdgeInsets.fromLTRB(
-              24,
-              20,
-              24,
-              MediaQuery.of(ctx).viewInsets.bottom + 36,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Handle
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.border,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            20,
+            24,
+            MediaQuery.of(ctx).viewInsets.bottom + 36,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.border,
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Choose payment days',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.titleText,
-                  ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Choose payment days',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.titleText,
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Vendor will approve or reject your request.',
-                  style: TextStyle(fontSize: 13, color: AppColors.bodyText),
-                ),
-                const SizedBox(height: 24),
-                // Day pills 1–7
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: List.generate(7, (i) {
-                    final day = i + 1;
-                    final isSelected = tempDays == day;
-                    return GestureDetector(
-                      onTap: () => setSheet(() => tempDays = day),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Vendor will approve or reject your request.',
+                style: TextStyle(fontSize: 13, color: AppColors.bodyText),
+              ),
+              const SizedBox(height: 24),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: List.generate(7, (i) {
+                  final day = i + 1;
+                  final isSelected = tempDays == day;
+                  return GestureDetector(
+                    onTap: () => setSheet(() => tempDays = day),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.primary
+                            : AppColors.surfaceAlt,
+                        borderRadius: BorderRadius.circular(30),
+                        border: Border.all(
                           color: isSelected
                               ? AppColors.primary
-                              : AppColors.surfaceAlt,
-                          borderRadius: BorderRadius.circular(30),
-                          border: Border.all(
-                            color: isSelected
-                                ? AppColors.primary
-                                : AppColors.border,
-                          ),
-                        ),
-                        child: Text(
-                          day == 1 ? '1 day' : '$day days',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: isSelected
-                                ? Colors.white
-                                : AppColors.bodyText,
-                          ),
+                              : AppColors.border,
                         ),
                       ),
-                    );
-                  }),
+                      child: Text(
+                        day == 1 ? '1 day' : '$day days',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: isSelected ? Colors.white : AppColors.bodyText,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+              const SizedBox(height: 20),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.sandLight,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.sand.withOpacity(0.4)),
                 ),
-                const SizedBox(height: 20),
-                // Due date preview
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.sandLight,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.sand.withOpacity(0.4)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.calendar_today_outlined,
-                        size: 16,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.calendar_today_outlined,
+                      size: 16,
+                      color: AppColors.sandDark,
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Due by: ${_formatDueDate(tempDays)}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
                         color: AppColors.sandDark,
                       ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Due by: ${_formatDueDate(tempDays)}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.sandDark,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      _selectedPayLaterDays = tempDays;
-                      Navigator.pop(ctx, tempDays);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
                     ),
-                    child: Text(
-                      'Request $tempDays-day Pay Later',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx, tempDays);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: Text(
+                    'Request $tempDays-day Pay Later',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-              ],
-            ),
-          );
-        },
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -978,7 +950,6 @@ class _NotificationsPageState extends State<NotificationsPage>
     );
   }
 
-  // ── Desktop tab bar ───────────────────────────────────────────────────────
   Widget _buildDesktopTabBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
@@ -1071,7 +1042,6 @@ class _NotificationsPageState extends State<NotificationsPage>
     );
   }
 
-  // ── Mobile header ─────────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
       decoration: BoxDecoration(gradient: _themeGradient),
@@ -1245,7 +1215,6 @@ class _NotificationsPageState extends State<NotificationsPage>
     );
   }
 
-  // ── WebSocket status bar ──────────────────────────────────────────────────
   Widget _buildWsStatusBar() {
     if (_wsState == WsState.subscribed && _newArrived) {
       return Container(
@@ -1281,19 +1250,21 @@ class _NotificationsPageState extends State<NotificationsPage>
         height: 28,
         color: AppColors.background,
         alignment: Alignment.center,
-        child: Row(
+        child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
+            SizedBox(
               width: 6,
               height: 6,
-              decoration: const BoxDecoration(
-                color: AppColors.success,
-                shape: BoxShape.circle,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppColors.success,
+                  shape: BoxShape.circle,
+                ),
               ),
             ),
-            const SizedBox(width: 5),
-            const Text(
+            SizedBox(width: 5),
+            Text(
               'Live — real-time updates on',
               style: TextStyle(
                 fontSize: 11,
@@ -1367,7 +1338,6 @@ class _NotificationsPageState extends State<NotificationsPage>
     return const SizedBox.shrink();
   }
 
-  // ── Body ──────────────────────────────────────────────────────────────────
   Widget _buildBody() {
     final items = _filtered;
     return SingleChildScrollView(
@@ -1583,52 +1553,42 @@ class _NotifCard extends StatelessWidget {
     required this.onViewOrders,
   });
 
-  // ── Action visibility rules ───────────────────────────────────────────────
-  //
-  // CUSTOMER: accepted + not yet paid + not yet pay_later requested
-  //           → show Pay Now AND Pay Later buttons
-  bool get _showCustomerPayButtons {
-    return notif.isCustomerNotif &&
-        notif.orderStatus == 'accepted' &&
-        notif.paymentStatus != 'paid' &&
-        notif.paymentStatus != 'pay_later';
-  }
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BUTTON VISIBILITY RULES
+  // These getters implement the exact flow logic. Read them carefully.
+  // ═══════════════════════════════════════════════════════════════════════════
 
-  // CUSTOMER: accepted + pay_later sent, waiting for vendor decision
-  //           → show waiting banner only, no action buttons
-  bool get _showPayLaterWaitingBanner {
-    return notif.isCustomerNotif &&
-        notif.orderStatus == 'accepted' &&
-        notif.paymentStatus == 'pay_later';
-  }
+  /// CUSTOMER: Order was accepted AND not yet paid AND customer hasn't
+  /// requested pay later yet → show Pay Now + Pay Later buttons
+  bool get _showCustomerPayButtons =>
+      !isVendor &&
+      notif.orderStatus == 'accepted' &&
+      notif.paymentStatus == 'unpaid';
 
-  // CUSTOMER: vendor approved pay later (delivered + pay_later)
-  //           AND not a due-date reminder
-  //           → show Pay Now button + "due by" info banner
-  bool get _showDeliveredPayNow {
-    return notif.isCustomerNotif &&
-        notif.orderStatus == 'delivered' &&
-        notif.paymentStatus == 'pay_later' &&
-        !notif.isPaymentDueReminder;
-  }
+  /// CUSTOMER: Customer already requested pay later, waiting for vendor
+  /// to approve or reject → show waiting banner only
+  bool get _showPayLaterWaiting =>
+      !isVendor &&
+      notif.orderStatus == 'accepted' &&
+      notif.paymentStatus == 'pay_later';
 
-  // CUSTOMER: payment due reminder (tomorrow or today)
-  //           → urgent banner with Pay Now
-  bool get _showDueReminderBanner => notif.isPaymentDueReminder;
+  /// CUSTOMER: Vendor approved pay later → order moved to 'processing',
+  /// customer still needs to pay → show Pay Now + due date banner
+  bool get _showApprovedPayLaterPayButton =>
+      !isVendor &&
+      notif.orderStatus == 'processing' &&
+      notif.paymentStatus == 'pay_later';
 
-  // VENDOR: pay later request needs a decision
-  bool get _showVendorPayLaterActions {
-    return isVendor && notif.isPayLaterPending;
-  }
+  /// CUSTOMER: Payment due reminder (tomorrow or today)
+  bool get _showDueReminder => !isVendor && notif.isPaymentDueReminder;
 
-  // VENDOR: new order that hasn't been accepted/declined yet
-  bool get _showVendorViewOrder {
-    return isVendor &&
-        notif.orderStatus == 'pending' &&
-        !notif.isPayLaterPending;
-  }
+  /// VENDOR: New order received, pending vendor action
+  bool get _showVendorViewOrder =>
+      isVendor && notif.orderStatus == 'pending' && !notif.isPayLaterPending;
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  /// VENDOR: Customer requested pay later — vendor must approve or reject
+  bool get _showVendorPayLaterActions => isVendor && notif.isPayLaterPending;
+
   @override
   Widget build(BuildContext context) {
     final orderItemId = notif.data['order_item_id'] as int?;
@@ -1667,7 +1627,7 @@ class _NotifCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Header row ─────────────────────────────────────────────
+              // ── Header ──────────────────────────────────────────────────
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1746,19 +1706,20 @@ class _NotifCard extends StatelessWidget {
                 ],
               ),
 
-              // ── Status banner ───────────────────────────────────────────
-              if (notif.data['status'] != null) ...[
+              // ── Status banner ─────────────────────────────────────────
+              if (notif.orderStatus.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 _buildStatusBanner(),
               ],
 
-              // ── Order detail grid ───────────────────────────────────────
+              // ── Order detail grid ─────────────────────────────────────
               if (_hasOrderDetail) ...[
                 const SizedBox(height: 10),
                 _buildOrderDetail(),
               ],
 
-              // ── [CUSTOMER] Pay Now + Pay Later buttons ──────────────────
+              // ── [CUSTOMER] Pay Now + Pay Later buttons ────────────────
+              // Shown when: order accepted, payment unpaid, no pay-later yet
               if (_showCustomerPayButtons) ...[
                 const SizedBox(height: 12),
                 const Divider(height: 1, color: AppColors.divider),
@@ -1766,27 +1727,29 @@ class _NotifCard extends StatelessWidget {
                 _buildCustomerPayButtons(isPayingNow, isPayingLater, isBusy),
               ],
 
-              // ── [CUSTOMER] Waiting for vendor decision ──────────────────
-              if (_showPayLaterWaitingBanner) ...[
+              // ── [CUSTOMER] Waiting for vendor to decide on pay later ───
+              // Shown when: order accepted, pay_later requested, vendor pending
+              if (_showPayLaterWaiting) ...[
                 const SizedBox(height: 10),
                 _buildPayLaterWaitingBanner(),
               ],
 
-              // ── [CUSTOMER] Vendor approved — Pay Now button ─────────────
-              if (_showDeliveredPayNow) ...[
+              // ── [CUSTOMER] Pay Now (after vendor approved pay later) ───
+              // Shown when: order processing (approved), payment still pay_later
+              if (_showApprovedPayLaterPayButton) ...[
                 const SizedBox(height: 12),
                 const Divider(height: 1, color: AppColors.divider),
                 const SizedBox(height: 12),
-                _buildPayNowOnly(isPayingNow, isBusy),
+                _buildApprovedPayLaterSection(isPayingNow, isBusy),
               ],
 
-              // ── [CUSTOMER] Payment due reminder ─────────────────────────
-              if (_showDueReminderBanner) ...[
+              // ── [CUSTOMER] Payment due reminder ───────────────────────
+              if (_showDueReminder) ...[
                 const SizedBox(height: 10),
                 _buildDueReminderBanner(isPayingNow, isBusy),
               ],
 
-              // ── [VENDOR] Accept / Reject pay later ──────────────────────
+              // ── [VENDOR] Accept / Reject pay later ────────────────────
               if (_showVendorPayLaterActions) ...[
                 const SizedBox(height: 12),
                 const Divider(height: 1, color: AppColors.divider),
@@ -1794,7 +1757,7 @@ class _NotifCard extends StatelessWidget {
                 _buildVendorPayLaterActions(isAccepting, isRejecting, isBusy),
               ],
 
-              // ── [VENDOR] View order button ───────────────────────────────
+              // ── [VENDOR] View order button ─────────────────────────────
               if (_showVendorViewOrder) ...[
                 const SizedBox(height: 12),
                 const Divider(height: 1, color: AppColors.divider),
@@ -1835,50 +1798,55 @@ class _NotifCard extends StatelessWidget {
     final status = notif.orderStatus;
     final payStatus = notif.paymentStatus;
     final data = notif.data;
+
     Color bg, fg;
     String text;
     IconData icon;
 
     switch (status) {
+      // ── Customer: order accepted, needs to pay ──────────────────────────
       case 'accepted':
         bg = const Color(0xFFE8F5E9);
         fg = AppColors.success;
         icon = Icons.check_circle_outline;
-        // Show different text depending on whether pay_later is already requested
         text = payStatus == 'pay_later'
             ? 'Pay later requested — waiting for vendor approval'
-            : 'Order accepted — pay now or request pay later';
+            : 'Order accepted — choose how to pay';
         break;
 
+      // ── Both: order declined / pay-later rejected ───────────────────────
       case 'declined':
         bg = const Color(0xFFFFEBEE);
         fg = AppColors.error;
         icon = Icons.cancel_outlined;
         final reason =
             data['rejection_reason'] as String? ?? 'No reason provided';
-        text = 'Declined: $reason';
+        text = 'Cancelled: $reason';
         break;
 
+      // ── Customer: vendor approved pay-later, order is moving forward ────
+      // ── OR direct pay completed (payment_status=paid)
       case 'processing':
         bg = AppColors.primaryMuted;
         fg = AppColors.primary;
         icon = Icons.autorenew_rounded;
-        text = payStatus == 'paid'
-            ? 'Payment received — order is being processed'
-            : 'Your order is being processed';
+        if (payStatus == 'pay_later') {
+          final due = data['payment_due_formatted'] as String? ?? '';
+          final amt = data['total_amount'] ?? '';
+          text = 'Order processing! Pay ₹$amt by $due when ready.';
+        } else if (payStatus == 'paid') {
+          text = 'Payment received — order is being processed';
+        } else {
+          text = 'Order is being processed';
+        }
         break;
 
+      // ── Customer: fully delivered & paid ───────────────────────────────
       case 'delivered':
         bg = const Color(0xFFE8F5E9);
         fg = AppColors.success;
         icon = Icons.done_all_rounded;
-        if (payStatus == 'pay_later') {
-          final due = data['payment_due_formatted'] as String? ?? '';
-          final amt = data['total_amount'] ?? '';
-          text = 'Order complete! Pay ₹$amt by $due';
-        } else {
-          text = 'Delivered successfully — payment confirmed';
-        }
+        text = 'Delivered & payment confirmed!';
         break;
 
       case 'shipped':
@@ -1888,14 +1856,16 @@ class _NotifCard extends StatelessWidget {
         text = 'Out for delivery!';
         break;
 
+      // ── Vendor: pay later requested, needs decision ────────────────────
       case 'pay_later_pending':
         bg = const Color(0xFFFFF8E1);
         fg = AppColors.warning;
         icon = Icons.hourglass_top_rounded;
-        final days = data['days_requested'] ?? 3;
+        final days = data['days_requested']?.toString() ?? '';
         final due = data['payment_due_formatted'] as String? ?? '';
-        text =
-            'Pay later requested: $days day(s). Due: $due. Accept or reject.';
+        text = days.isNotEmpty
+            ? 'Pay later: $days day(s), due $due. Approve or reject.'
+            : 'Pay later requested. Approve or reject.';
         break;
 
       default:
@@ -1944,42 +1914,31 @@ class _NotifCard extends StatelessWidget {
     final d = notif.data;
     final rows = <_DetailRow>[];
 
-    if (d['order_id'] != null) {
+    if (d['order_id'] != null)
       rows.add(_DetailRow('Order', '#${d['order_id']}'));
-    }
-    if ((d['product_name'] as String? ?? '').isNotEmpty) {
+    if ((d['product_name'] as String? ?? '').isNotEmpty)
       rows.add(_DetailRow('Product', d['product_name'] as String));
-    }
-    if (d['quantity_unit'] != null) {
+    if (d['quantity_unit'] != null)
       rows.add(_DetailRow('Quantity', '${d['quantity_unit']} unit'));
-    }
-    if (d['subtotal'] != null) {
-      rows.add(_DetailRow('Subtotal', '₹${d['subtotal']}'));
-    }
-    if ((d['delivery_charge'] as num? ?? 0) > 0) {
+    final subtotal = double.tryParse(d['subtotal']?.toString() ?? '0') ?? 0.0;
+    rows.add(_DetailRow('Subtotal', '₹${subtotal.toStringAsFixed(2)}'));
+    if ((double.tryParse(d['delivery_charge']?.toString() ?? '0') ?? 0) > 0)
       rows.add(_DetailRow('Delivery', '₹${d['delivery_charge']}'));
-    }
-    if (d['total_amount'] != null) {
+    if (d['total_amount'] != null)
       rows.add(_DetailRow('Total', '₹${d['total_amount']}'));
-    }
-    if (d['days_requested'] != null) {
+    if (d['days_requested'] != null)
       rows.add(_DetailRow('Pay later', '${d['days_requested']} day(s)'));
-    }
-    if ((d['payment_due_formatted'] as String? ?? '').isNotEmpty) {
+    if ((d['payment_due_formatted'] as String? ?? '').isNotEmpty)
       rows.add(_DetailRow('Due by', d['payment_due_formatted'] as String));
-    }
-    if (d['distance_km'] != null) {
+    if (d['distance_km'] != null)
       rows.add(_DetailRow('Distance', '${d['distance_km']} km'));
-    }
-    if ((d['customer_name'] as String? ?? '').isNotEmpty) {
+    if ((d['customer_name'] as String? ?? '').isNotEmpty)
       rows.add(_DetailRow('Customer', d['customer_name'] as String));
-    }
-    if ((d['customer_phone'] as String? ?? '').isNotEmpty) {
+    if ((d['customer_phone'] as String? ?? '').isNotEmpty)
       rows.add(_DetailRow('Phone', d['customer_phone'] as String));
-    }
-    if ((d['vendor_name'] as String? ?? '').isNotEmpty) {
+    if ((d['vendor_name'] as String? ?? '').isNotEmpty)
       rows.add(_DetailRow('Vendor', d['vendor_name'] as String));
-    }
+
     if (rows.isEmpty) return const SizedBox.shrink();
 
     return Container(
@@ -2026,7 +1985,7 @@ class _NotifCard extends StatelessWidget {
     );
   }
 
-  // ── [Customer] Pay Now + Pay Later buttons ────────────────────────────────
+  // ── [Customer] Pay Now + Pay Later buttons ───────────────────────────────
   Widget _buildCustomerPayButtons(
     bool isPayingNow,
     bool isPayingLater,
@@ -2103,9 +2062,9 @@ class _NotifCard extends StatelessWidget {
     );
   }
 
-  // ── [Customer] Waiting for vendor to approve pay later ────────────────────
+  // ── [Customer] Waiting for vendor to approve pay later ───────────────────
   Widget _buildPayLaterWaitingBanner() {
-    final days = notif.data['days_requested'] ?? '';
+    final days = notif.data['days_requested'];
     final due = notif.data['payment_due_formatted'] as String? ?? '';
     return Container(
       width: double.infinity,
@@ -2125,9 +2084,9 @@ class _NotifCard extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              days.toString().isNotEmpty && due.isNotEmpty
-                  ? 'Pay later requested ($days day(s), due $due). Waiting for vendor approval.'
-                  : 'Pay later requested. Waiting for vendor approval.',
+              days != null && due.isNotEmpty
+                  ? 'Pay later requested ($days day(s), due $due) — waiting for vendor approval.'
+                  : 'Pay later requested — waiting for vendor approval.',
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -2140,12 +2099,11 @@ class _NotifCard extends StatelessWidget {
     );
   }
 
-  // ── [Customer] Pay Now only (vendor approved pay later) ───────────────────
-  Widget _buildPayNowOnly(bool isPayingNow, bool isBusy) {
+  // ── [Customer] Vendor approved pay later — Pay Now button + info ─────────
+  Widget _buildApprovedPayLaterSection(bool isPayingNow, bool isBusy) {
     final total = notif.data['total_amount'] ?? 0;
     final due = notif.data['payment_due_formatted'] as String? ?? '';
-    final days = notif.data['days_requested'] ?? '';
-
+    final days = notif.data['days_requested']?.toString() ?? '';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2168,7 +2126,9 @@ class _NotifCard extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'Pay later approved ($days day(s)). Due by $due.',
+                  days.isNotEmpty
+                      ? 'Pay later approved ($days day(s)) • Due by $due'
+                      : 'Pay later approved • Due by $due',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -2368,7 +2328,6 @@ class _NotifCard extends StatelessWidget {
     );
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
   String _timeAgo(DateTime dt) {
     final diff = DateTime.now().difference(dt);
     if (diff.inMinutes < 1) return 'Just now';
@@ -2379,7 +2338,6 @@ class _NotifCard extends StatelessWidget {
   }
 }
 
-// ── Tiny data class ───────────────────────────────────────────────────────────
 class _DetailRow {
   final String label;
   final String value;

@@ -286,11 +286,6 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
   }
 
   // ── Color helpers ──────────────────────────────────────────────────────────
-  Color _bgColor(String s) {
-    if (s == 'accepted') return const Color(0xFFF0FAF0);
-    if (s == 'declined') return AppColors.error.withOpacity(0.08);
-    return const Color(0xFFFFF3E0);
-  }
 
   Color _textColor(String s) {
     if (s == 'accepted') return AppColors.success;
@@ -302,6 +297,13 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
     if (s == 'accepted') return AppColors.success.withOpacity(0.3);
     if (s == 'declined') return AppColors.error.withOpacity(0.3);
     return AppColors.border;
+  }
+
+  Color _bgColor(String s) {
+    if (s == 'pending') return const Color(0xFFFFF3E0);
+    if (s == 'accepted') return const Color(0xFFF0FAF0);
+    if (s == 'declined') return AppColors.error.withOpacity(0.08);
+    return const Color(0xFFFFF3E0);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -602,13 +604,19 @@ class _VendorRequestedOrderState extends State<VendorRequestedOrder>
                             ),
                             const SizedBox(width: 3),
                             Flexible(
-                              child: Text(
-                                customerPhone,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w600,
+                              child: GestureDetector(
+                                onTap: null,
+                                child: Text(
+                                  customerPhone,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                    decoration: customerPhone.isNotEmpty
+                                        ? TextDecoration.underline
+                                        : null,
+                                  ),
                                 ),
                               ),
                             ),

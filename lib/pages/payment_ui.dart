@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:front/services/razor_pay_native_stub.dart'
     if (dart.library.io) 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:front/config/app_config.dart';
 
 class PaymentPage extends StatefulWidget {
   final int orderItemId;
@@ -145,7 +146,7 @@ class _PaymentPageState extends State<PaymentPage> {
     } else {
       // Native path: razorpay_flutter package
       final options = {
-        'key': 'rzp_test_XXXXXXXXXXXXXXX', // ← your Key ID
+        'key': AppConfig.razorpayKey,
         'amount': (widget.totalAmount * 100).toInt(),
         'currency': 'INR',
         'name': 'SandHere',

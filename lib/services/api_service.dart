@@ -1058,7 +1058,10 @@ Base URL : $_baseUrl
           'data': data['data'],
         };
       }
-      return {'success': false, 'message': data['message'] ?? 'Payment failed'};
+      return {
+        'success': false,
+        'message': 'Backend failed: ${response.statusCode} - ${response.body}',
+      };
     } on TimeoutException {
       return {'success': false, 'message': 'Server timeout'};
     } catch (e) {
