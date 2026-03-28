@@ -1,3 +1,17 @@
+// lib/pages/vendor_home_page.dart
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// STATS COMPUTED FROM getVendorOrders()
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// _pendingOrders    — status == 'pending'
+// _acceptedOrders   — status == 'accepted'    (vendor accepted, awaiting payment)
+// _processingOrders — status == 'processing'  (payment confirmed / pay-later approved)
+// _deliveredOrders  — status == 'delivered'   (fully paid & delivered)
+// _revenue          — sum(subtotal + delivery_charge) where payment_status == 'paid'
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
@@ -19,17 +33,15 @@ class _VendorHomePageState extends State<VendorHomePage>
     with SingleTickerProviderStateMixin {
   final _api = ApiService();
 
-  // ── Stats from API ─────────────────────────────────────────────────────────
   bool _loading = true;
 
-  // Order stats — computed from getVendorOrders()
-  int _totalOrders = 0; // all order items
-  int _pendingOrders = 0; // status == 'pending'
-  int _acceptedOrders = 0; // status == 'accepted' (replaces "Dispatched")
-  double _revenue =
-      0; // sum(subtotal + delivery_charge) where payment_status == 'paid'
+  int _totalOrders = 0;
+  int _pendingOrders = 0;
+  int _acceptedOrders = 0;
+  int _processingOrders = 0;
+  int _deliveredOrders = 0;
+  double _revenue = 0;
 
-  // Inventory stats — from getVendorInventory()
   int _lowCount = 0;
   int _outCount = 0;
 
@@ -53,12 +65,10 @@ class _VendorHomePageState extends State<VendorHomePage>
     super.dispose();
   }
 
-  // ── Load both orders + inventory in parallel ───────────────────────────────
   Future<void> _loadAll() async {
     if (!mounted) return;
     setState(() => _loading = true);
 
-    // Fire both requests simultaneously
     final results = await Future.wait([
       _api.getVendorOrders(),
       _api.getVendorInventory(),
@@ -66,47 +76,54 @@ class _VendorHomePageState extends State<VendorHomePage>
 
     if (!mounted) return;
 
-    // ── Parse order stats ──────────────────────────────────────────────────
+    // ── Order stats ────────────────────────────────────────────────────────
     final ordersRes = results[0];
     if (ordersRes['success'] == true) {
-      // getVendorOrders returns {"data": [...]} where each item is an order-item wrapper
       final rawList = ordersRes['data'] as List? ?? [];
 
-      int total = rawList.length;
-      int pending = 0;
-      int accepted = 0;
+      int total = rawList.length,
+          pending = 0,
+          accepted = 0,
+          processing = 0,
+          delivered = 0;
       double revenue = 0.0;
 
       for (final item in rawList) {
-        // Each element: {"order_item": {...}, "order_id": ..., ...}
-        // The actual order item data is nested under "order_item"
-        final orderItem = (item['order_item'] as Map<String, dynamic>?) ?? {};
+        final oi = (item['order_item'] as Map<String, dynamic>?) ?? {};
+        final status = oi['status'] as String? ?? '';
+        final payStatus = oi['payment_status'] as String? ?? 'unpaid';
+        final subtotal = _toDouble(oi['subtotal']);
+        final dc = _toDouble(oi['delivery_charge'] ?? '0');
 
-        final status = orderItem['status'] as String? ?? '';
-        final paymentStatus =
-            orderItem['payment_status'] as String? ?? 'unpaid';
-        final subtotal = _toDouble(orderItem['subtotal']);
-        // delivery_charge is on the order item (from OrderItem model)
-        final deliveryCharge = _toDouble(orderItem['delivery_charge'] ?? '0');
-
-        if (status == 'pending') pending++;
-        if (status == 'accepted') accepted++;
-
-        // Revenue: only count fully paid order items
-        if (paymentStatus == 'paid') {
-          revenue += subtotal + deliveryCharge;
+        switch (status) {
+          case 'pending':
+            pending++;
+            break;
+          case 'accepted':
+            accepted++;
+            break;
+          case 'processing':
+            processing++;
+            break;
+          case 'delivered':
+            delivered++;
+            break;
         }
+
+        if (payStatus == 'paid') revenue += subtotal + dc;
       }
 
       setState(() {
         _totalOrders = total;
         _pendingOrders = pending;
         _acceptedOrders = accepted;
+        _processingOrders = processing;
+        _deliveredOrders = delivered;
         _revenue = revenue;
       });
     }
 
-    // ── Parse inventory stats ──────────────────────────────────────────────
+    // ── Inventory stats ────────────────────────────────────────────────────
     final invRes = results[1];
     if (invRes['success'] == true) {
       final raw = (invRes['data'] as List? ?? []);
@@ -144,7 +161,6 @@ class _VendorHomePageState extends State<VendorHomePage>
     _fadeCtrl.forward();
   }
 
-  // Safe double parser
   double _toDouble(dynamic v) {
     if (v == null) return 0.0;
     if (v is double) return v;
@@ -152,17 +168,13 @@ class _VendorHomePageState extends State<VendorHomePage>
     return double.tryParse(v.toString()) ?? 0.0;
   }
 
-  // Format revenue for display
-  String _formatRevenue(double amount) {
-    if (amount >= 10000000)
-      return '₹${(amount / 10000000).toStringAsFixed(1)}Cr';
-    if (amount >= 100000) return '₹${(amount / 100000).toStringAsFixed(1)}L';
-    if (amount >= 1000) return '₹${(amount / 1000).toStringAsFixed(1)}K';
-    return '₹${amount.toStringAsFixed(0)}';
+  String _fmtRevenue(double a) {
+    if (a >= 10000000) return '₹${(a / 10000000).toStringAsFixed(1)}Cr';
+    if (a >= 100000) return '₹${(a / 100000).toStringAsFixed(1)}L';
+    if (a >= 1000) return '₹${(a / 1000).toStringAsFixed(1)}K';
+    return '₹${a.toStringAsFixed(0)}';
   }
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  BUILD
   // ══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
@@ -203,10 +215,16 @@ class _VendorHomePageState extends State<VendorHomePage>
                                     _desktopGreeting(),
                                     const SizedBox(height: 28),
                                   ],
-                                  _statsGrid(isDesktop: isDesktop),
-                                  const SizedBox(height: 20),
+                                  _sectionLabel("Order Overview"),
+                                  const SizedBox(height: 12),
+                                  _orderStatsGrid(isDesktop: isDesktop),
+                                  const SizedBox(height: 14),
+                                  _revenueCard(),
+                                  const SizedBox(height: 14),
                                   _stockAlert(),
-                                  const SizedBox(height: 28),
+                                  if (_lowCount > 0 || _outCount > 0)
+                                    const SizedBox(height: 8),
+                                  const SizedBox(height: 20),
                                   _sectionLabel("Quick Actions"),
                                   const SizedBox(height: 14),
                                   _quickActions(isDesktop: isDesktop),
@@ -226,22 +244,21 @@ class _VendorHomePageState extends State<VendorHomePage>
     );
   }
 
-  // ── Loading shimmer-style placeholder ─────────────────────────────────────
   Widget _loadingState() => Column(
     children: [
       GridView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        itemCount: 4,
+        itemCount: 5,
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: Responsive.value<int>(
             context,
             mobile: 2,
-            tablet: 2,
-            desktop: 4,
+            tablet: 3,
+            desktop: 5,
           ),
-          crossAxisSpacing: 14,
-          mainAxisSpacing: 14,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
           childAspectRatio: MediaQuery.of(context).size.width > 700 ? 1.7 : 1.4,
         ),
         itemBuilder: (_, __) => Container(
@@ -251,18 +268,17 @@ class _VendorHomePageState extends State<VendorHomePage>
           ),
         ),
       ),
-      const SizedBox(height: 20),
+      const SizedBox(height: 12),
       Container(
-        height: 68,
+        height: 84,
         decoration: BoxDecoration(
           color: AppColors.surfaceAlt,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
         ),
       ),
     ],
   );
 
-  // ── Desktop greeting ───────────────────────────────────────────────────────
   Widget _desktopGreeting() => Row(
     children: [
       const Column(
@@ -319,7 +335,6 @@ class _VendorHomePageState extends State<VendorHomePage>
     ],
   );
 
-  // ── Mobile header ──────────────────────────────────────────────────────────
   Widget _buildMobileHeader() => Container(
     decoration: const BoxDecoration(gradient: AppColors.vendorGradient),
     child: SafeArea(
@@ -371,12 +386,22 @@ class _VendorHomePageState extends State<VendorHomePage>
     ),
   );
 
-  // ── Stats grid — REAL DATA ─────────────────────────────────────────────────
-  Widget _statsGrid({required bool isDesktop}) {
+  Widget _sectionLabel(String text) => Text(
+    text,
+    style: const TextStyle(
+      fontSize: 16,
+      fontWeight: FontWeight.w800,
+      color: AppColors.titleText,
+      letterSpacing: -0.2,
+    ),
+  );
+
+  // ── 5-stat grid: total | pending | accepted | processing | delivered ──────
+  Widget _orderStatsGrid({required bool isDesktop}) {
     final stats = [
       _StatData(
         value: '$_totalOrders',
-        label: "Total Orders",
+        label: "Total",
         icon: Icons.receipt_long_rounded,
         color: AppColors.primary,
         muted: AppColors.primaryMuted,
@@ -391,7 +416,6 @@ class _VendorHomePageState extends State<VendorHomePage>
         onTap: () => widget.onSelectView(ViewType.vendorRequestedOrder),
       ),
       _StatData(
-        // "Accepted" replaces "Dispatched" — no dispatch logic in backend yet
         value: '$_acceptedOrders',
         label: "Accepted",
         icon: Icons.check_circle_outline_rounded,
@@ -400,21 +424,28 @@ class _VendorHomePageState extends State<VendorHomePage>
         onTap: () => widget.onSelectView(ViewType.vendorRequestedOrder),
       ),
       _StatData(
-        // Revenue = sum of (subtotal + delivery_charge) for paid order items
-        value: _formatRevenue(_revenue),
-        label: "Revenue (Paid)",
-        icon: Icons.currency_rupee_rounded,
-        color: const Color(0xFF7C3AED),
-        muted: const Color(0xFFF3F0FF),
-        onTap: null,
+        value: '$_processingOrders',
+        label: "Processing",
+        icon: Icons.autorenew_rounded,
+        color: const Color(0xFF0284C7),
+        muted: const Color(0xFFE0F2FE),
+        onTap: () => widget.onSelectView(ViewType.vendorRequestedOrder),
+      ),
+      _StatData(
+        value: '$_deliveredOrders',
+        label: "Delivered",
+        icon: Icons.done_all_rounded,
+        color: AppColors.success,
+        muted: const Color(0xFFE8F5E9),
+        onTap: () => widget.onSelectView(ViewType.vendorRequestedOrder),
       ),
     ];
 
     final cols = Responsive.value<int>(
       context,
       mobile: 2,
-      tablet: 2,
-      desktop: 4,
+      tablet: 3,
+      desktop: 5,
     );
 
     return GridView.builder(
@@ -423,8 +454,8 @@ class _VendorHomePageState extends State<VendorHomePage>
       itemCount: stats.length,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: cols,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 14,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
         childAspectRatio: isDesktop ? 1.7 : 1.4,
       ),
       itemBuilder: (_, i) => _statCard(stats[i]),
@@ -434,7 +465,7 @@ class _VendorHomePageState extends State<VendorHomePage>
   Widget _statCard(_StatData s) => GestureDetector(
     onTap: s.onTap,
     child: Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
@@ -449,74 +480,157 @@ class _VendorHomePageState extends State<VendorHomePage>
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween, // ✅ IMPORTANT
         children: [
           Container(
-            padding: const EdgeInsets.all(9),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: s.muted,
-              borderRadius: BorderRadius.circular(11),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(s.icon, color: s.color, size: 20),
+            child: Icon(s.icon, color: s.color, size: 18),
           ),
-          const Spacer(),
-          Text(
-            s.value,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w900,
-              color: AppColors.titleText,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            s.label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: AppColors.bodyText,
-              fontWeight: FontWeight.w500,
-            ),
+
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                s.value,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.titleText,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                s.label,
+                style: const TextStyle(fontSize: 11, color: AppColors.bodyText),
+              ),
+            ],
           ),
         ],
       ),
     ),
   );
 
-  // ── Stock alert ────────────────────────────────────────────────────────────
+  // ── Revenue card with processing/delivered breakdown ───────────────────────
+  Widget _revenueCard() => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: AppColors.border),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(0.04),
+          blurRadius: 12,
+          offset: const Offset(0, 4),
+        ),
+      ],
+    ),
+    child: Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F0FF),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Icon(
+            Icons.currency_rupee_rounded,
+            color: Color(0xFF7C3AED),
+            size: 24,
+          ),
+        ),
+        const SizedBox(width: 16),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Revenue (Paid)",
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.bodyText,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _fmtRevenue(_revenue),
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF7C3AED),
+                letterSpacing: -0.5,
+              ),
+            ),
+          ],
+        ),
+        const Spacer(),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            _miniStat(
+              Icons.autorenew_rounded,
+              "Processing",
+              _processingOrders,
+              const Color(0xFF0284C7),
+            ),
+            const SizedBox(height: 6),
+            _miniStat(
+              Icons.done_all_rounded,
+              "Delivered",
+              _deliveredOrders,
+              AppColors.success,
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  Widget _miniStat(IconData icon, String label, int count, Color color) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 13, color: color),
+      const SizedBox(width: 5),
+      Text(
+        "$count $label",
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    ],
+  );
+
   Widget _stockAlert() {
     if (_lowCount == 0 && _outCount == 0) return const SizedBox.shrink();
-
     final isOos = _outCount > 0;
-    final alertColor = isOos ? AppColors.error : AppColors.warning;
-    final bgColor = alertColor.withOpacity(0.05);
-    final borderColor = alertColor.withOpacity(0.2);
-
+    final ac = isOos ? AppColors.error : AppColors.warning;
     final parts = <String>[];
     if (_outCount > 0) parts.add('$_outCount out of stock');
     if (_lowCount > 0) parts.add('$_lowCount low stock');
-
     return GestureDetector(
       onTap: () => widget.onSelectView(ViewType.vendorInventory),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: bgColor,
+          color: ac.withOpacity(0.05),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: borderColor, width: 1.5),
+          border: Border.all(color: ac.withOpacity(0.2), width: 1.5),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(9),
               decoration: BoxDecoration(
-                color: alertColor.withOpacity(0.1),
+                color: ac.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(
-                Icons.warning_amber_rounded,
-                color: alertColor,
-                size: 20,
-              ),
+              child: Icon(Icons.warning_amber_rounded, color: ac, size: 20),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -528,16 +642,13 @@ class _VendorHomePageState extends State<VendorHomePage>
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: alertColor,
+                      color: ac,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     '${parts.join(' · ')} — tap to restock',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: alertColor.withOpacity(0.8),
-                    ),
+                    style: TextStyle(fontSize: 12, color: ac.withOpacity(0.8)),
                   ),
                 ],
               ),
@@ -545,7 +656,7 @@ class _VendorHomePageState extends State<VendorHomePage>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
-                color: alertColor.withOpacity(0.12),
+                color: ac.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
@@ -553,7 +664,7 @@ class _VendorHomePageState extends State<VendorHomePage>
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: alertColor,
+                  color: ac,
                 ),
               ),
             ),
@@ -563,24 +674,12 @@ class _VendorHomePageState extends State<VendorHomePage>
     );
   }
 
-  // ── Section label ──────────────────────────────────────────────────────────
-  Widget _sectionLabel(String text) => Text(
-    text,
-    style: const TextStyle(
-      fontSize: 16,
-      fontWeight: FontWeight.w800,
-      color: AppColors.titleText,
-      letterSpacing: -0.2,
-    ),
-  );
-
-  // ── Quick actions ──────────────────────────────────────────────────────────
   Widget _quickActions({required bool isDesktop}) {
     final actions = [
       _ActionData(
         icon: Icons.pending_actions_outlined,
         label: "Orders",
-        desc: "View & manage incoming orders",
+        desc: "View & manage all orders",
         color: AppColors.primary,
         muted: AppColors.primaryMuted,
         onTap: () => widget.onSelectView(ViewType.vendorRequestedOrder),
@@ -588,7 +687,7 @@ class _VendorHomePageState extends State<VendorHomePage>
       _ActionData(
         icon: Icons.inventory_2_outlined,
         label: "Inventory",
-        desc: "Stock levels & restock alerts",
+        desc: "Stock levels & alerts",
         color: AppColors.vendor,
         muted: AppColors.vendorMuted,
         onTap: () => widget.onSelectView(ViewType.vendorInventory),
@@ -596,7 +695,7 @@ class _VendorHomePageState extends State<VendorHomePage>
       _ActionData(
         icon: Icons.notifications_outlined,
         label: "Notifications",
-        desc: "Updates & delivery alerts",
+        desc: "Pay-later requests & updates",
         color: AppColors.warning,
         muted: AppColors.sandLight,
         onTap: () => widget.onSelectView(ViewType.notifications),
@@ -610,7 +709,6 @@ class _VendorHomePageState extends State<VendorHomePage>
         onTap: () => widget.onSelectView(ViewType.vendorProfile),
       ),
     ];
-
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -686,7 +784,6 @@ class _VendorHomePageState extends State<VendorHomePage>
     ),
   );
 
-  // ── Add product banner ─────────────────────────────────────────────────────
   Widget _addProductBanner() => GestureDetector(
     onTap: () => widget.onSelectView(ViewType.listNewProduct),
     child: Container(
@@ -800,7 +897,6 @@ class _VendorHomePageState extends State<VendorHomePage>
   );
 }
 
-// ── Data models ────────────────────────────────────────────────────────────────
 class _StatData {
   final String value, label;
   final IconData icon;

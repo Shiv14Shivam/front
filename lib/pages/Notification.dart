@@ -23,12 +23,12 @@
 // BUTTON VISIBILITY MATRIX (Customer notifications)
 // ═══════════════════════════════════════════════════════════════════════════
 //
-// status='accepted' + payment_status='unpaid'    → Pay Now + Pay Later buttons
-// status='accepted' + payment_status='pay_later' → Waiting banner (no buttons)
-// status='processing' + payment_status='pay_later'→ Pay Now button + due banner
-// status='processing' + payment_status='paid'    → Confirmed banner only
-// status='delivered'  + payment_status='paid'    → Delivered banner only
-// status='declined'                              → Declined banner only
+// status='accepted'  + payment_status='unpaid'    → Pay Now + Pay Later buttons
+// status='accepted'  + payment_status='pay_later' → Waiting banner (no buttons)
+// status='processing'+ payment_status='pay_later' → Pay Now button + due banner
+// status='processing'+ payment_status='paid'      → Confirmed banner only
+// status='delivered' + payment_status='paid'      → Delivered banner only
+// status='declined'                               → Declined banner only
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // BUTTON VISIBILITY MATRIX (Vendor notifications)
@@ -36,7 +36,11 @@
 //
 // status='pending'           → View Orders button
 // status='pay_later_pending' → Approve Pay Later + Reject buttons
-// status='processing'/etc.   → Status banner only
+// status='processing' + paid → "Payment received, processing" banner
+// status='processing' + pay_later → "Pay later approved, preparing" banner
+// status='delivered'         → "Delivered" banner
+// status='declined'          → "Declined" banner
+// ═══════════════════════════════════════════════════════════════════════════
 
 import 'dart:convert';
 import 'package:front/config/app_config.dart';
@@ -85,7 +89,6 @@ class _Notif {
     createdAt: DateTime.tryParse(j['created_at'] ?? '') ?? DateTime.now(),
   );
 
-  // ── Short type helper ───────────────────────────────────────────────────────
   String get shortType => type.split('\\').last;
 
   // ── Status helpers ──────────────────────────────────────────────────────────
@@ -94,8 +97,6 @@ class _Notif {
   String get recipientType => data['recipient_type'] as String? ?? '';
   String get reminderType => data['reminder_type'] as String? ?? '';
 
-  // 'pay_later_pending' is ONLY used in PayLaterRequestedNotification payload
-  // to tell the vendor card to show Approve/Reject buttons.
   bool get isPayLaterPending => orderStatus == 'pay_later_pending';
   bool get isPaymentDueReminder =>
       reminderType == 'tomorrow' || reminderType == 'today';
@@ -133,20 +134,17 @@ class _Notif {
           ? Icons.alarm_rounded
           : Icons.access_time_rounded;
     }
-    if (shortType == 'PaymentConfirmedNotification') {
+    if (shortType == 'PaymentConfirmedNotification')
       return Icons.check_circle_outline_rounded;
-    }
     if (shortType == 'PayLaterDecisionNotification') {
       return orderStatus == 'processing'
           ? Icons.access_time_rounded
           : Icons.cancel_outlined;
     }
-    if (shortType == 'PayLaterRequestedNotification') {
+    if (shortType == 'PayLaterRequestedNotification')
       return Icons.hourglass_top_rounded;
-    }
-    if (shortType == 'OrderPlacedNotification') {
+    if (shortType == 'OrderPlacedNotification')
       return Icons.shopping_bag_outlined;
-    }
     switch (orderStatus) {
       case 'accepted':
         return Icons.check_circle_outline;
@@ -181,7 +179,7 @@ class _Notif {
       case 'delivered':
         return AppColors.success;
       case 'processing':
-        return AppColors.primary;
+        return AppColors.primary; // ← was missing
       case 'shipped':
         return AppColors.primaryDark;
     }
@@ -194,17 +192,15 @@ class _Notif {
           ? const Color(0xFFFFEBEE)
           : const Color(0xFFFFF8E1);
     }
-    if (shortType == 'PaymentConfirmedNotification') {
+    if (shortType == 'PaymentConfirmedNotification')
       return const Color(0xFFE8F5E9);
-    }
     if (shortType == 'PayLaterDecisionNotification') {
       return orderStatus == 'processing'
           ? const Color(0xFFFFF8E1)
           : const Color(0xFFFFEBEE);
     }
-    if (shortType == 'PayLaterRequestedNotification') {
+    if (shortType == 'PayLaterRequestedNotification')
       return const Color(0xFFFFF8E1);
-    }
     if (isPayLaterPending) return const Color(0xFFFFF8E1);
     switch (orderStatus) {
       case 'accepted':
@@ -214,7 +210,7 @@ class _Notif {
       case 'delivered':
         return const Color(0xFFE8F5E9);
       case 'processing':
-        return AppColors.primaryMuted;
+        return AppColors.primaryMuted; // ← was missing
       case 'shipped':
         return AppColors.primaryMuted;
     }
@@ -367,7 +363,6 @@ class _NotificationsPageState extends State<NotificationsPage>
 
     if (result['success'] == true) {
       _showSnack(result['message'] ?? 'Payment successful!', isSuccess: true);
-      // Update local notification state to show confirmed banner
       final data = result['data'] as Map<String, dynamic>?;
       final newStatus = data?['order_status'] as String? ?? 'processing';
       _updateNotifData(orderItemId, newStatus: newStatus, payStatus: 'paid');
@@ -472,7 +467,6 @@ class _NotificationsPageState extends State<NotificationsPage>
     final orderItemId = notif.data['order_item_id'] as int?;
     if (orderItemId == null) return;
 
-    // ✅ FIXED TypeError "0.00": Safe numeric parsing
     final totalAmountRaw =
         notif.data['total_amount'] ?? notif.data['payment_due'] ?? '0';
     final totalAmount = (double.tryParse(totalAmountRaw.toString()) ?? 0.0);
@@ -556,13 +550,9 @@ class _NotificationsPageState extends State<NotificationsPage>
         'Pay later requested ($selectedDays day(s)). Due: $dueFormatted. Waiting for vendor.',
         isSuccess: true,
       );
-      // Update notification to show "waiting for vendor" state:
-      // status stays 'accepted', payment_status changes to 'pay_later'
       _updateNotifData(
         orderItemId,
         payStatus: 'pay_later',
-        // Keep order_status as 'accepted' — vendor hasn't decided yet
-        // The card will show the waiting banner instead of action buttons
         extraData: {
           'days_requested': selectedDays,
           'payment_due_formatted': dueFormatted,
@@ -595,7 +585,6 @@ class _NotificationsPageState extends State<NotificationsPage>
         'Pay later approved! Order is processing. Due: $due',
         isSuccess: true,
       );
-      // Update to show "approved" state — no more Approve/Reject buttons
       _updateNotifData(
         orderItemId,
         newStatus: 'processing',
@@ -631,7 +620,6 @@ class _NotificationsPageState extends State<NotificationsPage>
   }
 
   // ── Helper: update notif data in the list ─────────────────────────────────
-  // Finds notification by orderItemId and updates its status/payment fields.
   void _updateNotifData(
     int orderItemId, {
     String? newStatus,
@@ -769,9 +757,7 @@ class _NotificationsPageState extends State<NotificationsPage>
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx, tempDays);
-                  },
+                  onPressed: () => Navigator.pop(ctx, tempDays),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
@@ -1555,39 +1541,43 @@ class _NotifCard extends StatelessWidget {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // BUTTON VISIBILITY RULES
-  // These getters implement the exact flow logic. Read them carefully.
   // ═══════════════════════════════════════════════════════════════════════════
 
-  /// CUSTOMER: Order was accepted AND not yet paid AND customer hasn't
-  /// requested pay later yet → show Pay Now + Pay Later buttons
+  /// CUSTOMER: Order accepted, unpaid — show Pay Now + Pay Later
   bool get _showCustomerPayButtons =>
       !isVendor &&
       notif.orderStatus == 'accepted' &&
       notif.paymentStatus == 'unpaid';
 
-  /// CUSTOMER: Customer already requested pay later, waiting for vendor
-  /// to approve or reject → show waiting banner only
+  /// CUSTOMER: Pay later requested, waiting for vendor
   bool get _showPayLaterWaiting =>
       !isVendor &&
       notif.orderStatus == 'accepted' &&
       notif.paymentStatus == 'pay_later';
 
-  /// CUSTOMER: Vendor approved pay later → order moved to 'processing',
-  /// customer still needs to pay → show Pay Now + due date banner
+  /// CUSTOMER: Vendor approved pay later → order processing, pay now
   bool get _showApprovedPayLaterPayButton =>
       !isVendor &&
       notif.orderStatus == 'processing' &&
       notif.paymentStatus == 'pay_later';
 
-  /// CUSTOMER: Payment due reminder (tomorrow or today)
+  /// CUSTOMER: Payment due reminder
   bool get _showDueReminder => !isVendor && notif.isPaymentDueReminder;
 
-  /// VENDOR: New order received, pending vendor action
+  /// VENDOR: New pending order — show View Orders button
   bool get _showVendorViewOrder =>
       isVendor && notif.orderStatus == 'pending' && !notif.isPayLaterPending;
 
-  /// VENDOR: Customer requested pay later — vendor must approve or reject
+  /// VENDOR: Customer requested pay later — Approve / Reject buttons
   bool get _showVendorPayLaterActions => isVendor && notif.isPayLaterPending;
+
+  /// VENDOR: Order is processing (payment received OR pay-later approved) — info banner
+  bool get _showVendorProcessingBanner =>
+      isVendor && notif.orderStatus == 'processing' && !notif.isPayLaterPending;
+
+  /// VENDOR: Order delivered & fully paid — success banner
+  bool get _showVendorDeliveredBanner =>
+      isVendor && notif.orderStatus == 'delivered';
 
   @override
   Widget build(BuildContext context) {
@@ -1719,7 +1709,6 @@ class _NotifCard extends StatelessWidget {
               ],
 
               // ── [CUSTOMER] Pay Now + Pay Later buttons ────────────────
-              // Shown when: order accepted, payment unpaid, no pay-later yet
               if (_showCustomerPayButtons) ...[
                 const SizedBox(height: 12),
                 const Divider(height: 1, color: AppColors.divider),
@@ -1727,15 +1716,13 @@ class _NotifCard extends StatelessWidget {
                 _buildCustomerPayButtons(isPayingNow, isPayingLater, isBusy),
               ],
 
-              // ── [CUSTOMER] Waiting for vendor to decide on pay later ───
-              // Shown when: order accepted, pay_later requested, vendor pending
+              // ── [CUSTOMER] Waiting for vendor ─────────────────────────
               if (_showPayLaterWaiting) ...[
                 const SizedBox(height: 10),
                 _buildPayLaterWaitingBanner(),
               ],
 
-              // ── [CUSTOMER] Pay Now (after vendor approved pay later) ───
-              // Shown when: order processing (approved), payment still pay_later
+              // ── [CUSTOMER] Pay Now after pay-later approved ────────────
               if (_showApprovedPayLaterPayButton) ...[
                 const SizedBox(height: 12),
                 const Divider(height: 1, color: AppColors.divider),
@@ -1757,7 +1744,7 @@ class _NotifCard extends StatelessWidget {
                 _buildVendorPayLaterActions(isAccepting, isRejecting, isBusy),
               ],
 
-              // ── [VENDOR] View order button ─────────────────────────────
+              // ── [VENDOR] View pending order button ─────────────────────
               if (_showVendorViewOrder) ...[
                 const SizedBox(height: 12),
                 const Divider(height: 1, color: AppColors.divider),
@@ -1786,6 +1773,18 @@ class _NotifCard extends StatelessWidget {
                   ),
                 ),
               ],
+
+              // ── [VENDOR] Processing info banner ────────────────────────
+              if (_showVendorProcessingBanner) ...[
+                const SizedBox(height: 10),
+                _buildVendorProcessingBanner(),
+              ],
+
+              // ── [VENDOR] Delivered success banner ──────────────────────
+              if (_showVendorDeliveredBanner) ...[
+                const SizedBox(height: 10),
+                _buildVendorDeliveredBanner(),
+              ],
             ],
           ),
         ),
@@ -1804,7 +1803,6 @@ class _NotifCard extends StatelessWidget {
     IconData icon;
 
     switch (status) {
-      // ── Customer: order accepted, needs to pay ──────────────────────────
       case 'accepted':
         bg = const Color(0xFFE8F5E9);
         fg = AppColors.success;
@@ -1814,7 +1812,6 @@ class _NotifCard extends StatelessWidget {
             : 'Order accepted — choose how to pay';
         break;
 
-      // ── Both: order declined / pay-later rejected ───────────────────────
       case 'declined':
         bg = const Color(0xFFFFEBEE);
         fg = AppColors.error;
@@ -1824,8 +1821,6 @@ class _NotifCard extends StatelessWidget {
         text = 'Cancelled: $reason';
         break;
 
-      // ── Customer: vendor approved pay-later, order is moving forward ────
-      // ── OR direct pay completed (payment_status=paid)
       case 'processing':
         bg = AppColors.primaryMuted;
         fg = AppColors.primary;
@@ -1835,18 +1830,21 @@ class _NotifCard extends StatelessWidget {
           final amt = data['total_amount'] ?? '';
           text = 'Order processing! Pay ₹$amt by $due when ready.';
         } else if (payStatus == 'paid') {
-          text = 'Payment received — order is being processed';
+          text = isVendor
+              ? 'Payment received — preparing order for delivery'
+              : 'Payment received — order is being processed';
         } else {
           text = 'Order is being processed';
         }
         break;
 
-      // ── Customer: fully delivered & paid ───────────────────────────────
       case 'delivered':
         bg = const Color(0xFFE8F5E9);
         fg = AppColors.success;
         icon = Icons.done_all_rounded;
-        text = 'Delivered & payment confirmed!';
+        text = isVendor
+            ? 'Order delivered & payment confirmed!'
+            : 'Delivered & payment confirmed!';
         break;
 
       case 'shipped':
@@ -1856,7 +1854,6 @@ class _NotifCard extends StatelessWidget {
         text = 'Out for delivery!';
         break;
 
-      // ── Vendor: pay later requested, needs decision ────────────────────
       case 'pay_later_pending':
         bg = const Color(0xFFFFF8E1);
         fg = AppColors.warning;
@@ -1938,6 +1935,8 @@ class _NotifCard extends StatelessWidget {
       rows.add(_DetailRow('Phone', d['customer_phone'] as String));
     if ((d['vendor_name'] as String? ?? '').isNotEmpty)
       rows.add(_DetailRow('Vendor', d['vendor_name'] as String));
+    if ((d['paid_at'] as String? ?? '').isNotEmpty)
+      rows.add(_DetailRow('Paid at', d['paid_at'] as String));
 
     if (rows.isEmpty) return const SizedBox.shrink();
 
@@ -2062,7 +2061,7 @@ class _NotifCard extends StatelessWidget {
     );
   }
 
-  // ── [Customer] Waiting for vendor to approve pay later ───────────────────
+  // ── [Customer] Waiting for vendor ────────────────────────────────────────
   Widget _buildPayLaterWaitingBanner() {
     final days = notif.data['days_requested'];
     final due = notif.data['payment_due_formatted'] as String? ?? '';
@@ -2099,7 +2098,7 @@ class _NotifCard extends StatelessWidget {
     );
   }
 
-  // ── [Customer] Vendor approved pay later — Pay Now button + info ─────────
+  // ── [Customer] Approved pay later — Pay Now + info ──────────────────────
   Widget _buildApprovedPayLaterSection(bool isPayingNow, bool isBusy) {
     final total = notif.data['total_amount'] ?? 0;
     final due = notif.data['payment_due_formatted'] as String? ?? '';
@@ -2107,7 +2106,6 @@ class _NotifCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Approved banner
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2140,7 +2138,6 @@ class _NotifCard extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 10),
-        // Pay Now button
         SizedBox(
           width: double.infinity,
           height: 46,
@@ -2257,74 +2254,144 @@ class _NotifCard extends StatelessWidget {
     bool isAccepting,
     bool isRejecting,
     bool isBusy,
-  ) {
-    return Row(
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 46,
-            child: ElevatedButton(
-              onPressed: isBusy ? null : onAcceptPayLater,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.success,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+  ) => Row(
+    children: [
+      Expanded(
+        child: SizedBox(
+          height: 46,
+          child: ElevatedButton(
+            onPressed: isBusy ? null : onAcceptPayLater,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: isAccepting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text(
-                      'Approve Pay Later',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
             ),
+            child: isAccepting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text(
+                    'Approve Pay Later',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
           ),
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: SizedBox(
-            height: 46,
-            child: OutlinedButton(
-              onPressed: isBusy ? null : onRejectPayLater,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.error,
-                side: BorderSide(color: AppColors.error.withOpacity(0.5)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+      ),
+      const SizedBox(width: 10),
+      Expanded(
+        child: SizedBox(
+          height: 46,
+          child: OutlinedButton(
+            onPressed: isBusy ? null : onRejectPayLater,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.error,
+              side: BorderSide(color: AppColors.error.withOpacity(0.5)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: isRejecting
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: AppColors.error,
-                      ),
-                    )
-                  : const Text(
-                      'Reject',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
             ),
+            child: isRejecting
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.error,
+                    ),
+                  )
+                : const Text(
+                    'Reject',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                  ),
           ),
         ),
-      ],
+      ),
+    ],
+  );
+
+  // ── [VENDOR] Processing info banner ───────────────────────────────────────
+  // Shown after payment received (direct pay) or pay-later approved
+  Widget _buildVendorProcessingBanner() {
+    final payStatus = notif.paymentStatus;
+    final due = notif.data['payment_due_formatted'] as String? ?? '';
+    final amt = notif.data['total_amount'] ?? '';
+
+    final text = payStatus == 'paid'
+        ? '💰 Payment of ₹$amt received — prepare the order for delivery'
+        : payStatus == 'pay_later'
+        ? '⏳ Pay later approved — preparing order, payment due $due'
+        : '⚙️ Order is being processed';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.primaryMuted,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.primary.withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.autorenew_rounded,
+            size: 14,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── [VENDOR] Delivered banner ──────────────────────────────────────────────
+  Widget _buildVendorDeliveredBanner() {
+    final amt = notif.data['total_amount'] ?? '';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F5E9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.success.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.done_all_rounded,
+            size: 14,
+            color: AppColors.success,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '✅ Order delivered & ₹$amt payment confirmed!',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.success,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
