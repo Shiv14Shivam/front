@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'dart:io' show Platform;
 
 class AppConfig {
   static const String razorpayKey = String.fromEnvironment(
@@ -8,14 +7,9 @@ class AppConfig {
   );
 
   static String get baseUrl {
-    // Flutter Web
-
     if (kIsWeb) {
-      return "http://sandbackend.test/api"; // Herd domain works in browser too!
+      return "https://sand-backend-production.up.railway.app/api";
     }
-    if (Platform.isAndroid) {
-      return "http://10.0.2.2:8000/api";
-    }
-    return "http://sandbackend.test/api"; // native desktop/iOS
+    return "http://localhost:8000/api"; // Local dev fallback
   }
 }
