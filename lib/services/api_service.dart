@@ -29,7 +29,6 @@ Base URL : $_baseUrl
   Map<String, String> get _headers => {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
-    if (!kIsWeb) 'Host': 'sandbackend.test',
   };
 
   Map<String, String> _authHeaders(String token) => {
