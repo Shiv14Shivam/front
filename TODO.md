@@ -1,20 +1,35 @@
-# Flutter CI/CD Setup Progress
+# Flutter Firebase CI/CD Setup Progress
 
 ## Completed:
-- [x] Created `.github/workflows/flutter-cd.yml` for test/build/deploy to Vercel (Firebase optional).
+- [x] Created custom `.github/workflows/flutter-cd.yml` (test + Firebase deploy).
+- [x] Firebase project initialized (sandhere-web).
 
-## Next Steps:
-1. Add secrets to GitHub repo Shiv14Shivam/front:
-   - `VERCEL_TOKEN`: From Vercel dashboard > Tokens.
-   - `ORG_ID` & `PROJECT_ID`: From Vercel project settings (if not using Git integration).
-   - Or connect Vercel GitHub App for automatic deploys.
-2. For Firebase/GCP (optional):
-   - Create service account `github-action-1141712509@sandhere-web.iam.gserviceaccount.com` in GCP project `sandhere-web`.
-   - Download JSON key, base64 encode, add as `FIREBASE_SERVICE_ACCOUNT_SANDHERE_WEB` secret.
-   - Uncomment Firebase job.
-3. Commit & push to `main`: `git add .github && git commit -m "Add GitHub Actions CI/CD" && git push`.
-4. Verify workflow runs in GitHub Actions tab.
+## Critical Next: GCP Service Account (Fix 404 Error)
+1. Go to [GCP Console IAM](https://console.cloud.google.com/iam-admin/serviceaccounts?project=sandhere-web).
+2. Create service account:
+   ```
+   Name: github-action-1141712509
+   ID: github-action-1141712509
+   Description: GitHub Actions Firebase deploy
+   ```
+3. Grant roles: `Firebase Hosting Admin`, `Firebase Rules Admin`, `Service Account User`.
+4. Create key (JSON), download `key.json`.
+5. Base64 encode:
+   ```
+   base64 -w 0 key.json  # Copy output
+   ```
+6. GitHub repo Settings > Secrets > New secret:
+   - Name: `FIREBASE_SERVICE_ACCOUNT_SANDHERE_WEB`
+   - Value: base64 string.
 
-## Testing:
-- Run `flutter pub get && flutter analyze && flutter test` locally.
+## Other Steps:
+1. Delete auto Firebase workflows: `rm .github/workflows/firebase-hosting-*.yml && git add && git commit -m "Remove auto Firebase workflows" && git push`.
+2. Push workflow changes → auto test/deploy on main.
+
+## Verify:
+- Actions tab shows success.
+- Firebase Hosting: https://sandhere-web.web.app or configured URL.
+- Local: `flutter build web && firebase deploy --only hosting`.
+
+Run `flutter test` (passed!).
 

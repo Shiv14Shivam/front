@@ -47,35 +47,11 @@ jobs:
     - name: Build web
       run: flutter build web --release
       
-    - name: Deploy to Vercel
-      uses: amondnet/vercel-action@v25
+    - name: Deploy to Firebase Hosting
+      uses: FirebaseExtended/action-hosting-deploy@v0
       with:
-        vercel-token: ${{ secrets.VERCEL_TOKEN }}
-        vercel-org-id: ${{ secrets.ORG_ID }}
-        vercel-project-id: ${{ secrets.PROJECT_ID }}
-        working-directory: ./
-        vercel-args: '--prod'
-
-# Optional: Firebase deploy (uncomment after SA setup)
-#  firebase-deploy:
-#    runs-on: ubuntu-latest
-#    needs: test
-#    if: github.event_name == 'push'
-#    
-#    steps:
-#    - uses: actions/checkout@v4
-#    
-#    - uses: subosito/flutter-action@v2
-#      with:
-#        flutter-version: '3.24.0'
-#        
-#    - run: flutter pub get
-#    - run: flutter build web --release
-#    
-#    - uses: FirebaseExtended/action-hosting-deploy@v0
-#      with:
-#        repoToken: '${{ secrets.GITHUB_TOKEN }}'
-#        firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_SANDHERE_WEB }}'
-#        channelId: live
-#        projectId: sandhere-web
+        repoToken: '${{ secrets.GITHUB_TOKEN }}'
+        firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_SANDHERE_WEB }}'
+        channelId: live
+        projectId: sandhere-web
 
