@@ -1,4 +1,13 @@
 # SandHere Deployment Guide
+
+## Automated CI/CD (New!)
+GitHub Actions workflow `.github/workflows/flutter-cd.yml` handles testing, web build, and Vercel deployment.
+
+**Setup:**
+1. Add GitHub repo secrets: `VERCEL_TOKEN`, `ORG_ID`, `PROJECT_ID` (see TODO.md).
+2. Push to `main` → auto-deploy!
+
+Manual steps below still work.
 ## Best Approach: Backend First → Frontend
 
 ### Why Backend First?
