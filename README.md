@@ -32,7 +32,26 @@ flutter pub get
 - Feature 3
 
 ## Usage
-Instructions on how to use this project will go here.
+
+### Production (default)
+```
+flutter run
+flutter build apk --release
+```
+
+### Local Development
+```
+flutter run --dart-define PRODUCTION=false --dart-define BACKEND_HOST=sandbackend.test
+```
+
+**Config logs on launch:**
+```
+API CONFIG
+Platform : Native/Web
+Base URL : https://sand-here-server-main-0xw3qp.free.laravel.cloud
+```
+
+All API/WebSocket calls default to LaravelCloud production backend.
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

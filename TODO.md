@@ -1,14 +1,10 @@
-# Fix Frontend-Backend Network Error
+**TODO: Switch Frontend to Production Backend**
 
-## Steps:
-- [x] 1. Analyzed files: app_config.dart, api_service.dart, websocket_service.dart, session_manager.dart
-- [x] 2. Updated lib/config/app_config.dart with proper host logic and dart-define support
-- [x] 3. Verified websocket host extraction works (uses Uri.host from baseUrl → sandbackend.test)
-- [x] 4. Instructions for running added to app_config.dart comments
-- [x] 5. Updated backend CORS to allow sandbackend.test origins
-- [x] 6. Check CORS if needed (backend config/cors.php) → done
-- [x] 7. Added BACKEND_PORT dart-define (default 80 for Herd)
-- [x] 8. Updated TODO.md
-- [x] 9. Tested: login success ✅
-- [x] 10. Task complete: Frontend now connects to Laravel Herd backend
+1. ✅ Create TODO.md 
+2. ✅ Edit lib/config/app_config.dart to default to production URL
+3. ✅ Verify no other hard-coded local URLs (search_files confirmed)
+4. ☐ Test: flutter run (no flag needed - defaults to prod)
+5. ☐ Update README.md with production run instructions
+6. ☐ Build APK: flutter build apk --release
+7. ☐ Mark complete
 
