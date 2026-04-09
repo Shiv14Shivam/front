@@ -4,7 +4,7 @@ import '../widgets/logo.dart';
 import '../view_type.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  SandHereWebsite  —  Landing page
+//  SandHereWebsite  —  Landing page (Customer + Vendor focused)
 //  Usage in main.dart:
 //    case ViewType.primary:
 //    case ViewType.landing:
@@ -35,6 +35,8 @@ class _SandHereWebsiteState extends State<SandHereWebsite> {
                 _Navbar(onGetStarted: _openModal),
                 _HeroSection(onGetStarted: _openModal),
                 _DualRoleSection(onGetStarted: _openModal),
+                _CustomerBenefitsSection(),
+                _VendorBenefitsSection(),
                 _HowItWorksSection(),
                 _FeaturesSection(),
                 _CTASection(onGetStarted: _openModal),
@@ -78,7 +80,6 @@ class _Navbar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Real logo
           const AppLogo(size: 38),
           const SizedBox(width: 10),
           RichText(
@@ -107,9 +108,9 @@ class _Navbar extends StatelessWidget {
           ),
           const Spacer(),
           if (!isMobile) ...[
-            _NavLink("Materials"),
+            _NavLink("For Customers"),
+            _NavLink("For Vendors"),
             _NavLink("How it works"),
-            _NavLink("Vendors"),
             const SizedBox(width: 16),
           ],
           _GradientBtn(
@@ -161,14 +162,9 @@ class _HeroSection extends StatelessWidget {
     final isMobile = MediaQuery.of(context).size.width < 700;
     return Container(
       width: double.infinity,
-      // Blue-to-green diagonal gradient — the core visual identity
       decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            Color(0xFF1D4ED8), // AppColors.primary — customer blue
-            Color(0xFF1565a0), // mid blend
-            Color(0xFF15803D), // AppColors.vendor — vendor green
-          ],
+          colors: [Color(0xFF1D4ED8), Color(0xFF1565a0), Color(0xFF15803D)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -198,7 +194,6 @@ class _HeroDesktop extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Badge
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
@@ -220,7 +215,7 @@ class _HeroDesktop extends StatelessWidget {
               ),
               const SizedBox(height: 28),
               const Text(
-                "Construction\nMaterials,\nDelivered Fast.",
+                "Construction Materials,\nDelivered Fast.",
                 style: TextStyle(
                   fontSize: 54,
                   fontWeight: FontWeight.w900,
@@ -231,7 +226,7 @@ class _HeroDesktop extends StatelessWidget {
               ),
               const SizedBox(height: 18),
               Text(
-                "Order cement, sand, steel and more online.\nGet them delivered straight to your site.",
+                "Buy directly from verified suppliers. Sell to verified buyers.\nOne platform for the entire construction supply chain.",
                 style: TextStyle(
                   fontSize: 16,
                   color: Colors.white.withOpacity(0.85),
@@ -244,7 +239,7 @@ class _HeroDesktop extends StatelessWidget {
                   _WhiteBtn(label: "Order as Customer", onTap: onGetStarted),
                   const SizedBox(width: 14),
                   _OutlineWhiteBtn(
-                    label: "Join as Vendor",
+                    label: "Supply as Vendor",
                     onTap: onGetStarted,
                   ),
                 ],
@@ -286,7 +281,7 @@ class _HeroMobile extends StatelessWidget {
       ),
       const SizedBox(height: 20),
       const Text(
-        "Construction\nMaterials,\nDelivered Fast.",
+        "Construction Materials,\nDelivered Fast.",
         style: TextStyle(
           fontSize: 38,
           fontWeight: FontWeight.w900,
@@ -297,7 +292,7 @@ class _HeroMobile extends StatelessWidget {
       ),
       const SizedBox(height: 14),
       Text(
-        "Order cement, sand and steel — delivered to your site.",
+        "Buy & sell construction materials in one place.",
         style: TextStyle(
           fontSize: 15,
           color: Colors.white.withOpacity(0.85),
@@ -312,7 +307,7 @@ class _HeroMobile extends StatelessWidget {
       ),
       const SizedBox(height: 10),
       _OutlineWhiteBtn(
-        label: "Join as Vendor",
+        label: "Supply as Vendor",
         onTap: onGetStarted,
         fullWidth: true,
       ),
@@ -324,7 +319,6 @@ class _HeroMobile extends StatelessWidget {
   );
 }
 
-// The visual card floating on the hero
 class _HeroVisual extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -337,13 +331,11 @@ class _HeroVisual extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // dot texture
           Positioned.fill(child: CustomPaint(painter: _DotPainter())),
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo centered in card
                 const AppLogo(size: 88),
                 const SizedBox(height: 20),
                 Text(
@@ -362,7 +354,7 @@ class _HeroVisual extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  "Delivered to your doorstep",
+                  "Buy. Sell. Build.",
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.white.withOpacity(0.75),
@@ -397,7 +389,7 @@ class _HeroVisual extends StatelessWidget {
                       ),
                       const SizedBox(width: 7),
                       const Text(
-                        "Delivery confirmed!",
+                        "Active in 50+ cities",
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
@@ -436,8 +428,8 @@ class _StatsRow extends StatelessWidget {
     spacing: 36,
     runSpacing: 16,
     children: [
-      _Stat(value: "500+", label: "Orders Delivered"),
-      _Stat(value: "50+", label: "Verified Vendors"),
+      _Stat(value: "500+", label: "Orders"),
+      _Stat(value: "50+", label: "Vendors"),
       _Stat(value: "4.9★", label: "Avg Rating"),
     ],
   );
@@ -468,7 +460,6 @@ class _Stat extends StatelessWidget {
 }
 
 // ─── DUAL ROLE SECTION ────────────────────────────────────────────────────────
-// The blue vs green split — most important visual differentiator
 class _DualRoleSection extends StatelessWidget {
   final VoidCallback onGetStarted;
   const _DualRoleSection({required this.onGetStarted});
@@ -495,7 +486,7 @@ class _DualRoleSection extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            "Whether you're building or supplying — Sand Here is for you.",
+            "Whether you're building or supplying — Sand Here connects you.",
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 15, color: AppColors.bodyText),
           ),
@@ -542,11 +533,12 @@ class _RoleFeatureCard extends StatefulWidget {
 class _RoleFeatureCardState extends State<_RoleFeatureCard> {
   bool _hov = false;
 
-  Color get _color =>
-      widget.isVendor ? const Color(0xFF15803D) : AppColors.primary;
+  Color get _color => isVendor ? const Color(0xFF15803D) : AppColors.primary;
 
   Color get _muted =>
-      widget.isVendor ? const Color(0xFFF0FDF4) : AppColors.primaryMuted;
+      isVendor ? const Color(0xFFF0FDF4) : AppColors.primaryMuted;
+
+  bool get isVendor => widget.isVendor;
 
   @override
   Widget build(BuildContext context) {
@@ -579,7 +571,6 @@ class _RoleFeatureCardState extends State<_RoleFeatureCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Icon pill
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -587,16 +578,16 @@ class _RoleFeatureCardState extends State<_RoleFeatureCard> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(
-                  widget.isVendor
+                  isVendor
                       ? Icons.local_shipping_rounded
-                      : Icons.person_rounded,
+                      : Icons.shopping_bag_rounded,
                   color: _color,
                   size: 30,
                 ),
               ),
               const SizedBox(height: 20),
               Text(
-                widget.isVendor ? "I'm a Vendor" : "I'm a Customer",
+                isVendor ? "I'm a Vendor" : "I'm a Customer",
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
@@ -606,9 +597,9 @@ class _RoleFeatureCardState extends State<_RoleFeatureCard> {
               ),
               const SizedBox(height: 10),
               Text(
-                widget.isVendor
-                    ? "List your products, manage inventory, fulfill orders and grow your supply business."
-                    : "Browse cement, sand & steel from verified vendors. Order and track delivery to your site.",
+                isVendor
+                    ? "List, manage & deliver products. Grow your supply business with our mini ERP platform."
+                    : "Browse certified suppliers. Order materials with confidence. Track delivery in real-time.",
                 style: const TextStyle(
                   fontSize: 14,
                   color: AppColors.bodyText,
@@ -616,17 +607,16 @@ class _RoleFeatureCardState extends State<_RoleFeatureCard> {
                 ),
               ),
               const SizedBox(height: 24),
-              // Feature bullets
-              ...(widget.isVendor
+              ...(isVendor
                       ? [
-                          "List products & set pricing",
-                          "Manage orders & inventory",
-                          "Get paid reliably",
+                          "Mini ERP to manage inventory",
+                          "Analytics & revenue insights",
+                          "Direct customer orders",
                         ]
                       : [
-                          "Browse verified suppliers",
-                          "Order cement, sand, steel",
-                          "Track your delivery",
+                          "Find verified suppliers",
+                          "Price negotiation tools",
+                          "Real-time order tracking",
                         ])
                   .map(
                     (f) => Padding(
@@ -656,7 +646,6 @@ class _RoleFeatureCardState extends State<_RoleFeatureCard> {
                     ),
                   ),
               const SizedBox(height: 28),
-              // CTA button per role
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -666,7 +655,7 @@ class _RoleFeatureCardState extends State<_RoleFeatureCard> {
                 ),
                 child: Center(
                   child: Text(
-                    widget.isVendor ? "Start Supplying →" : "Start Ordering →",
+                    isVendor ? "Start Supplying →" : "Start Ordering →",
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
@@ -683,13 +672,283 @@ class _RoleFeatureCardState extends State<_RoleFeatureCard> {
   }
 }
 
+// ─── CUSTOMER BENEFITS SECTION ────────────────────────────────────────────────
+class _CustomerBenefitsSection extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 700;
+    return Container(
+      color: Colors.white,
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 24 : 80,
+        vertical: 72,
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.primaryMuted,
+              borderRadius: BorderRadius.circular(50),
+            ),
+            child: const Text(
+              "👤 For Customers",
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            "Browse, Compare & Order",
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.w900,
+              color: AppColors.titleText,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Access verified suppliers, negotiate prices, and track delivery.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 15, color: AppColors.bodyText),
+          ),
+          const SizedBox(height: 48),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: isMobile ? 1 : 3,
+            crossAxisSpacing: 18,
+            mainAxisSpacing: 18,
+            childAspectRatio: isMobile ? 4.0 : 1.6,
+            children: const [
+              _BenefitCard(
+                icon: Icons.verified_outlined,
+                color: AppColors.primary,
+                title: "Verified Suppliers",
+                desc: "Every vendor is checked, rated & reviewed by buyers.",
+              ),
+              _BenefitCard(
+                icon: Icons.handshake_outlined,
+                color: AppColors.primary,
+                title: "Direct Negotiation",
+                desc: "Negotiate prices & terms directly with vendors.",
+              ),
+              _BenefitCard(
+                icon: Icons.location_on_outlined,
+                color: AppColors.primary,
+                title: "Location-Based",
+                desc: "Find suppliers near your construction site.",
+              ),
+              _BenefitCard(
+                icon: Icons.receipt_long_outlined,
+                color: AppColors.primary,
+                title: "Transparent Pricing",
+                desc: "See all costs upfront. No hidden charges.",
+              ),
+              _BenefitCard(
+                icon: Icons.local_shipping_outlined,
+                color: AppColors.primary,
+                title: "Track Delivery",
+                desc: "Real-time tracking from warehouse to site.",
+              ),
+              _BenefitCard(
+                icon: Icons.support_agent_outlined,
+                color: AppColors.primary,
+                title: "Customer Support",
+                desc: "24/7 assistance for your orders & concerns.",
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── VENDOR BENEFITS SECTION ──────────────────────────────────────────────────
+class _VendorBenefitsSection extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 700;
+    return Container(
+      color: const Color(0xFFF8FAFF),
+      padding: EdgeInsets.symmetric(
+        horizontal: isMobile ? 24 : 80,
+        vertical: 72,
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.circular(50),
+            ),
+            child: const Text(
+              "🚚 For Vendors",
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF15803D),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            "List, Manage & Grow",
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.w900,
+              color: AppColors.titleText,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Mini ERP platform to manage inventory, orders & revenue.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 15, color: AppColors.bodyText),
+          ),
+          const SizedBox(height: 48),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: isMobile ? 1 : 3,
+            crossAxisSpacing: 18,
+            mainAxisSpacing: 18,
+            childAspectRatio: isMobile ? 4.0 : 1.6,
+            children: const [
+              _BenefitCard(
+                icon: Icons.storefront_outlined,
+                color: Color(0xFF15803D),
+                title: "Digital Storefront",
+                desc: "List products with stock levels & real-time pricing.",
+              ),
+              _BenefitCard(
+                icon: Icons.inventory_2_outlined,
+                color: Color(0xFF15803D),
+                title: "Inventory Management",
+                desc:
+                    "Track stock, auto-reorder alerts, multi-warehouse setup.",
+              ),
+              _BenefitCard(
+                icon: Icons.analytics_outlined,
+                color: Color(0xFF15803D),
+                title: "Sales Analytics",
+                desc:
+                    "Revenue insights, customer trends & performance metrics.",
+              ),
+              _BenefitCard(
+                icon: Icons.assignment_outlined,
+                color: Color(0xFF15803D),
+                title: "Order Management",
+                desc: "Accept, process & fulfill orders from one dashboard.",
+              ),
+              _BenefitCard(
+                icon: Icons.local_shipping_outlined,
+                color: Color(0xFF15803D),
+                title: "Delivery Integration",
+                desc: "Manage deliveries & customer location tracking.",
+              ),
+              _BenefitCard(
+                icon: Icons.trending_up_outlined,
+                color: Color(0xFF15803D),
+                title: "Grow Your Business",
+                desc: "Reach verified buyers, build reputation & scale sales.",
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BenefitCard extends StatefulWidget {
+  final IconData icon;
+  final Color color;
+  final String title, desc;
+  const _BenefitCard({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.desc,
+  });
+  @override
+  State<_BenefitCard> createState() => _BenefitCardState();
+}
+
+class _BenefitCardState extends State<_BenefitCard> {
+  bool _hov = false;
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    onEnter: (_) => setState(() => _hov = true),
+    onExit: (_) => setState(() => _hov = false),
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: _hov ? widget.color.withOpacity(0.05) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: _hov ? widget.color.withOpacity(0.4) : AppColors.border,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _hov
+                ? widget.color.withOpacity(0.1)
+                : Colors.black.withOpacity(0.03),
+            blurRadius: _hov ? 20 : 4,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: widget.color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(widget.icon, color: widget.color, size: 20),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            widget.title,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.titleText,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            widget.desc,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.bodyText,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 // ─── HOW IT WORKS ─────────────────────────────────────────────────────────────
 class _HowItWorksSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 700;
     return Container(
-      // Very subtle blue-green tinted bg
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [Color(0xFFEFF4FF), Color(0xFFF0FDF4)],
@@ -714,7 +973,7 @@ class _HowItWorksSection extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            "Three steps to get materials at your site",
+            "Three steps to connect buyers & suppliers",
             style: TextStyle(fontSize: 15, color: AppColors.bodyText),
           ),
           const SizedBox(height: 52),
@@ -732,24 +991,24 @@ class _HowItWorksSection extends StatelessWidget {
   List<Widget> _steps() => [
     _Step(
       num: "01",
-      icon: Icons.search_rounded,
+      icon: Icons.store_outlined,
       color: AppColors.primary,
-      title: "Browse Materials",
-      desc: "Search cement, sand, steel and aggregates from verified vendors.",
+      title: "Suppliers List",
+      desc: "Vendors create profiles & list cement, sand, steel & aggregates.",
     ),
     _Step(
       num: "02",
-      icon: Icons.location_on_outlined,
+      icon: Icons.search_rounded,
       color: const Color(0xFF0e6ab5),
-      title: "Set Your Location",
-      desc: "Drop a pin on your construction site or enter address manually.",
+      title: "Buyers Browse",
+      desc: "Customers search materials, check prices, ratings & availability.",
     ),
     _Step(
       num: "03",
       icon: Icons.local_shipping_rounded,
       color: const Color(0xFF15803D),
-      title: "Get it Delivered",
-      desc: "Vendor confirms and delivers your order on time, every time.",
+      title: "Order & Deliver",
+      desc: "Orders confirmed & delivered on time. Track in real-time.",
     ),
   ];
 }
@@ -817,7 +1076,7 @@ class _Step extends StatelessWidget {
   );
 }
 
-// ─── FEATURES ─────────────────────────────────────────────────────────────────
+// ─── FEATURES SECTION ────────────────────────────────────────────────────────
 class _FeaturesSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -851,38 +1110,38 @@ class _FeaturesSection extends StatelessWidget {
               _FeatCard(
                 icon: Icons.verified_outlined,
                 color: AppColors.primary,
-                title: "Verified Vendors",
-                desc: "Every vendor is checked and rated by real customers.",
+                title: "Verified Network",
+                desc: "All buyers & sellers are verified for trust & safety.",
               ),
               _FeatCard(
                 icon: Icons.bolt_outlined,
                 color: Color(0xFF15803D),
                 title: "Fast Delivery",
-                desc: "Same-day or scheduled delivery to match your timeline.",
+                desc: "Same-day or scheduled delivery to match needs.",
               ),
               _FeatCard(
                 icon: Icons.price_check_outlined,
                 color: AppColors.primary,
-                title: "Clear Pricing",
-                desc: "Full price shown upfront. No hidden charges.",
+                title: "Fair Pricing",
+                desc: "Transparent pricing with no hidden charges.",
               ),
               _FeatCard(
                 icon: Icons.inventory_2_outlined,
                 color: Color(0xFF15803D),
                 title: "All Materials",
-                desc: "Cement, sand, steel, gravel and more in one place.",
+                desc: "Cement, sand, steel, gravel & more in one place.",
               ),
               _FeatCard(
                 icon: Icons.support_agent_outlined,
                 color: AppColors.primary,
                 title: "24/7 Support",
-                desc: "Our team is available round the clock for help.",
+                desc: "Round-the-clock support for buyers & vendors.",
               ),
               _FeatCard(
-                icon: Icons.star_border_rounded,
+                icon: Icons.shield_outlined,
                 color: Color(0xFF15803D),
-                title: "Quality Assured",
-                desc: "Materials meet construction-grade standards always.",
+                title: "Secure Transactions",
+                desc: "Safe payment & dispute resolution.",
               ),
             ],
           ),
@@ -985,7 +1244,6 @@ class _CTASection extends StatelessWidget {
         vertical: 56,
       ),
       decoration: BoxDecoration(
-        // Blue to green gradient — mirrors the hero
         gradient: const LinearGradient(
           colors: [Color(0xFF1D4ED8), Color(0xFF1565a0), Color(0xFF15803D)],
           begin: Alignment.topLeft,
@@ -1003,7 +1261,7 @@ class _CTASection extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            "Ready to Build Smarter?",
+            "Ready to Join?",
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: isMobile ? 26 : 34,
@@ -1014,7 +1272,7 @@ class _CTASection extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            "Join customers and vendors already using Sand Here across India.",
+            "Join thousands of buyers and vendors already building with Sand Here.",
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 14,
@@ -1029,7 +1287,7 @@ class _CTASection extends StatelessWidget {
             alignment: WrapAlignment.center,
             children: [
               _WhiteBtn(label: "Order as Customer", onTap: onGetStarted),
-              _OutlineWhiteBtn(label: "Join as Vendor", onTap: onGetStarted),
+              _OutlineWhiteBtn(label: "Supply as Vendor", onTap: onGetStarted),
             ],
           ),
         ],
@@ -1038,7 +1296,7 @@ class _CTASection extends StatelessWidget {
   }
 }
 
-// ─── FOOTER ───────────────────────────────────────────────────────────────────
+// ─── FOOTER ───────────────────────────────────────────��───────────────────────
 class _Footer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -1157,7 +1415,7 @@ class _RoleModal extends StatelessWidget {
                     children: [
                       Expanded(
                         child: _ModalCard(
-                          icon: Icons.person_rounded,
+                          icon: Icons.shopping_bag_rounded,
                           label: "Customer",
                           desc: "Buy materials for your project",
                           color: AppColors.primary,
@@ -1262,7 +1520,6 @@ class _ModalCardState extends State<_ModalCard> {
 }
 
 // ─── SHARED BUTTONS ───────────────────────────────────────────────────────────
-// White fill button — used on gradient backgrounds
 class _WhiteBtn extends StatefulWidget {
   final String label;
   final VoidCallback onTap;
@@ -1315,7 +1572,6 @@ class _WhiteBtnState extends State<_WhiteBtn> {
   );
 }
 
-// Outline white button — used on gradient backgrounds
 class _OutlineWhiteBtn extends StatefulWidget {
   final String label;
   final VoidCallback onTap;
@@ -1362,7 +1618,6 @@ class _OutlineWhiteBtnState extends State<_OutlineWhiteBtn> {
   );
 }
 
-// Gradient button — used on white backgrounds (navbar)
 class _GradientBtn extends StatefulWidget {
   final String label;
   final VoidCallback onTap;
