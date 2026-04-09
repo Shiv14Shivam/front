@@ -389,7 +389,7 @@ class _HeroVisual extends StatelessWidget {
                       ),
                       const SizedBox(width: 7),
                       const Text(
-                        "Active in 50+ cities",
+                        "Delivery in 24-48 hrs",
                         style: TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
